@@ -7,6 +7,14 @@ add_library(couchd_core
 # Lets code write #include "protocol/resp_parser.h".
 target_include_directories(couchd_core PUBLIC src)
 
+# One socket implementation per OS, behind the same platform/socket.h.
+if(WIN32)
+  target_sources(couchd_core PRIVATE src/platform/win32/socket.cpp)
+  target_link_libraries(couchd_core PUBLIC ws2_32)  # the Winsock library
+else()
+  target_sources(couchd_core PRIVATE src/platform/posix/socket.cpp)
+endif()
+
 # The server executable. Doesn't link Cushion yet; storage arrives in Phase 3.
 add_executable(couchd src/main.cpp)
 target_link_libraries(couchd PRIVATE couchd_core)
