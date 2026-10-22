@@ -3,7 +3,8 @@ add_library(couchd_core
   src/commands/commands.cpp
   src/commands/store.cpp
   src/protocol/resp_parser.cpp
-  src/protocol/resp_writer.cpp)
+  src/protocol/resp_writer.cpp
+  src/server/server.cpp)
 # Lets code write #include "protocol/resp_parser.h".
 target_include_directories(couchd_core PUBLIC src)
 
