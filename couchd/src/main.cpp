@@ -17,12 +17,14 @@ void on_stop_signal(int) { g_stop_requested = 1; }
 
 int main() {
     // std::signal returns SIG_ERR if the handler can't be installed.
-    if (std::signal(SIGINT, on_stop_signal) == SIG_ERR || std::signal(SIGTERM, on_stop_signal) == SIG_ERR) {
+    if (std::signal(SIGINT, on_stop_signal) == SIG_ERR ||
+        std::signal(SIGTERM, on_stop_signal) == SIG_ERR) {
         std::cerr << "couchd: failed to install signal handlers\n";
         return 1;
     }
 
-    std::cout << "couchd: started, press Ctrl+C to stop" << std::endl;  // endl flushes so it shows immediately
+    // std::endl flushes, so the line shows immediately.
+    std::cout << "couchd: started, press Ctrl+C to stop" << std::endl;
 
     // shortcut: wakes every 100 ms to check the flag; replaced by the event loop in Phase 2.
     while (!g_stop_requested) {

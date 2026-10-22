@@ -1,6 +1,6 @@
-#include <gtest/gtest.h>
-
 #include "cushion/version.h"
+
+#include <gtest/gtest.h>
 
 // TEST(group, name) defines a test; GoogleTest finds and runs it automatically.
 TEST(Version, IsZeroZeroOne) {

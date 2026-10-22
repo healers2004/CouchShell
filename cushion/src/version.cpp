@@ -4,4 +4,4 @@ namespace cushion {
 
 std::string version() { return "0.0.1"; }
 
-}
+}  // namespace cushion
