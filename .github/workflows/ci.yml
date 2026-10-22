@@ -1,4 +1,5 @@
-# Builds and tests couchd and Cushion on Linux and Windows on every push and pull request.
+# On every push and pull request: builds and tests couchd and Cushion on Linux and Windows,
+# and the UI on Windows.
 name: CI
 
 on: [push, pull_request]
@@ -38,3 +39,14 @@ jobs:
         run: |
           sudo apt-get install -y redis-tools
           bash tools/smoke_test.sh build/couchd/couchd
+
+  # Builds the WPF app and runs its unit tests. WPF only exists on Windows.
+  ui:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build and test
+        run: dotnet test ui/CouchShell.sln
