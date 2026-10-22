@@ -1,4 +1,4 @@
-# Builds and tests the C++ side on Linux and Windows on every push and pull request.
+# Builds and tests couchd and Cushion on Linux and Windows on every push and pull request.
 name: CI
 
 on: [push, pull_request]
@@ -31,3 +31,10 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Debug --output-on-failure
+
+      # The real redis-cli against the real couchd binary (built with sanitizers).
+      - name: Smoke test with redis-cli (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y redis-tools
+          bash tools/smoke_test.sh build/couchd/couchd
