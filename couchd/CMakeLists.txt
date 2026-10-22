@@ -1,5 +1,6 @@
 # Everything except main(), so tests can link it without starting the server.
 add_library(couchd_core
+  src/commands/commands.cpp
   src/commands/store.cpp
   src/protocol/resp_parser.cpp
   src/protocol/resp_writer.cpp)
@@ -11,6 +12,7 @@ add_executable(couchd src/main.cpp)
 target_link_libraries(couchd PRIVATE couchd_core)
 
 add_executable(couchd_tests
+  tests/commands_test.cpp
   tests/resp_parser_test.cpp
   tests/resp_writer_test.cpp
   tests/store_test.cpp)
