@@ -24,4 +24,4 @@ $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -Ru
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-Write-Output "CouchShell will start at logon. Remove it with: tools/install-startup.ps1 -Remove"
+Write-Output "CouchShell will start at logon. Run this script again with -Remove to undo it."

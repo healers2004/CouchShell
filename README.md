@@ -33,7 +33,7 @@ dotnet test ui/CouchShell.sln
 End-to-end check of Tachyon and couchd together, on Windows:
 
 ```
-tools/integration_test.ps1 build\vendor\tachyon\tachyon\Debug\tachyon.exe build\couchd\Debug\couchd.exe
+powershell -ExecutionPolicy Bypass -File tools\integration_test.ps1 build\vendor\tachyon\tachyon\Debug\tachyon.exe build\couchd\Debug\couchd.exe
 ```
 
 ## Run
@@ -43,10 +43,10 @@ Build a Release, then start all three programs:
 ```
 cmake --build build --config Release
 dotnet build ui/CouchShell.sln -c Release
-tools/start-couchshell.ps1
+powershell -ExecutionPolicy Bypass -File tools\start-couchshell.ps1
 ```
 
-To start CouchShell at logon, run `tools/install-startup.ps1`. To stop that, run `tools/install-startup.ps1 -Remove`.
+To start CouchShell at logon, run `powershell -ExecutionPolicy Bypass -File tools\install-startup.ps1`. To stop that, add `-Remove` to the end of the same command.
 
 Data and logs are in `%LOCALAPPDATA%\CouchShell`.
 
