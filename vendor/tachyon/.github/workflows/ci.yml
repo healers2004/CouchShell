@@ -1,0 +1,64 @@
+# On every push and pull request: builds and tests Tachyon and Horizon on Linux and Windows.
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  cpp:
+    strategy:
+      fail-fast: false  # a Linux failure shouldn't cancel the Windows run, and vice versa
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # Linux: GCC with AddressSanitizer (memory errors) and UndefinedBehaviorSanitizer.
+      # -fno-sanitize-recover makes any report fail the test instead of just printing.
+      - name: Configure (Linux, sanitizers)
+        if: runner.os == 'Linux'
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+
+      - name: Configure (Windows, MSVC)
+        if: runner.os == 'Windows'
+        run: cmake -S . -B build
+
+      # --config / -C pick Debug on Windows, where one build folder holds Debug and Release.
+      - name: Build
+        run: cmake --build build --config Debug
+
+      - name: Test
+        run: ctest --test-dir build -C Debug --output-on-failure
+
+      # The real redis-cli against the real tachyon binary (built with sanitizers).
+      - name: Smoke test with redis-cli (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-tools redis-server
+          bash tools/smoke_test.sh build/tachyon/tachyon
+
+      # Crashes tachyon mid-write and mid-snapshot; no acknowledged write may be lost.
+      - name: Crash test (Linux)
+        if: runner.os == 'Linux'
+        run: bash tools/crash_test.sh build/tachyon/tachyon 24
+
+      # Fills a tiny RAM disk: a failed snapshot must keep serving, a full log must stop cleanly.
+      - name: Full-disk test (Linux)
+        if: runner.os == 'Linux'
+        run: bash tools/disk_full_test.sh build/tachyon/tachyon
+
+      # The same commands against a real Redis and against tachyon; every reply must match.
+      - name: Compare with real Redis (Linux)
+        if: runner.os == 'Linux'
+        run: bash tools/compare_with_redis.sh build/tachyon/tachyon
+
+  # libFuzzer on the RESP parser and the log reader, with ASan and UBSan (Clang only).
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fuzz each target for 60 seconds
+        run: bash tools/fuzz.sh 60 build-fuzz
