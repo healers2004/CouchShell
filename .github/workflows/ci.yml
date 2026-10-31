@@ -1,5 +1,5 @@
-# On every push and pull request: builds and tests the vendored Tachyon on Linux and Windows,
-# and the UI on Windows.
+# On every push and pull request: builds and tests the vendored Tachyon and couchd on Linux and
+# Windows, and the UI on Windows.
 name: CI
 
 on: [push, pull_request]
@@ -40,6 +40,11 @@ jobs:
         run: |
           sudo apt-get install -y redis-tools
           bash vendor/tachyon/tools/smoke_test.sh build/vendor/tachyon/tachyon/tachyon
+
+      # The real couchd and Tachyon together, over the same pub/sub protocol the UI uses.
+      - name: Integration test (Windows)
+        if: runner.os == 'Windows'
+        run: tools/integration_test.ps1 build\vendor\tachyon\tachyon\Debug\tachyon.exe build\couchd\Debug\couchd.exe
 
   # Builds the WPF app and runs its unit tests. WPF only exists on Windows.
   ui:
