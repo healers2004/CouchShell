@@ -1,0 +1,40 @@
+{
+  "apps": [
+    {
+      "id": "youtube",
+      "name": "YouTube",
+      "category": "watch",
+      "type": "web",
+      "target": "https://www.youtube.com/tv"
+    },
+    {
+      "id": "netflix",
+      "name": "Netflix",
+      "category": "watch",
+      "type": "web",
+      "target": "https://www.netflix.com"
+    },
+    {
+      "id": "moonlight",
+      "name": "Moonlight",
+      "category": "games",
+      "type": "exe",
+      "target": "%ProgramFiles%\\Moonlight Game Streaming\\Moonlight.exe"
+    },
+    {
+      "id": "steam-example",
+      "name": "Team Fortress 2",
+      "category": "games",
+      "type": "steam",
+      "target": "440",
+      "processName": "tf_win64.exe"
+    },
+    {
+      "id": "command-prompt",
+      "name": "Command Prompt",
+      "category": "apps",
+      "type": "exe",
+      "target": "%SystemRoot%\\System32\\cmd.exe"
+    }
+  ]
+}

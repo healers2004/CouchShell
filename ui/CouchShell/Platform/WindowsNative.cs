@@ -43,4 +43,59 @@ internal static class WindowsNative
         gamepad = state.Gamepad;
         return connected;
     }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    // Returns the id of the thread that owns the window; the process id out-parameter is unused.
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, IntPtr processId);
+
+    // Shares input state between two threads, which lets the second one take focus.
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AttachThreadInput(uint attach, uint attachTo, [MarshalAs(UnmanagedType.Bool)] bool doAttach);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool BringWindowToTop(IntPtr window);
+
+    // Returns false when Windows refuses, which it does for most background programs.
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    // Windows only lets the foreground thread hand over focus, so attach to that thread for the
+    // duration of the call. Returns whether `window` ended up in front.
+    public static bool ForceForeground(IntPtr window)
+    {
+        if (TryTakeForeground(window)) return true;
+
+        // Windows allows a focus change right after keyboard input, so a tap of Alt unlocks it.
+        // Alt on its own types nothing.
+        keybd_event(VirtualKeyMenu, 0, 0, UIntPtr.Zero);
+        keybd_event(VirtualKeyMenu, 0, KeyEventKeyUp, UIntPtr.Zero);
+        return TryTakeForeground(window);
+    }
+
+    private static bool TryTakeForeground(IntPtr window)
+    {
+        uint ours = GetCurrentThreadId();
+        uint theirs = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
+        bool attached = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, true);
+        BringWindowToTop(window);
+        SetForegroundWindow(window);
+        if (attached) AttachThreadInput(ours, theirs, false);
+        return GetForegroundWindow() == window;
+    }
+
+    private const byte VirtualKeyMenu = 0x12;  // VK_MENU, the Alt key
+    private const uint KeyEventKeyUp = 0x0002;
+
+    // Queues a synthetic key event. It has no return value.
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
 }

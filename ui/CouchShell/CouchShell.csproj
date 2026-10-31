@@ -10,4 +10,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Copied next to the program, where it can be edited without recompiling. -->
+    <Content Include="..\..\config\apps.json" Link="config\apps.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

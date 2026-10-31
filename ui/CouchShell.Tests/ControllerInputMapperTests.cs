@@ -81,6 +81,16 @@ public class ControllerInputMapperTests
     }
 
     [Fact]
+    public void ShouldersAndYControlVolumeOncePerPress()
+    {
+        var mapper = Connected();
+        Assert.Equal([NavAction.VolumeDown], mapper.Update(LeftShoulder, 0, 0, Ms(10)));
+        Assert.Empty(mapper.Update(LeftShoulder, 0, 0, Ms(2000)));
+        Assert.Equal([NavAction.VolumeUp], mapper.Update(RightShoulder, 0, 0, Ms(2010)));
+        Assert.Equal([NavAction.Mute], mapper.Update(ButtonY, 0, 0, Ms(2020)));
+    }
+
+    [Fact]
     public void ButtonHeldDuringReconnectDoesNotFire()
     {
         var mapper = Connected();

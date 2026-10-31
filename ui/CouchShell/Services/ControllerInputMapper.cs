@@ -1,7 +1,7 @@
 namespace CouchShell.Services;
 
 // What the user asked for, independent of whether it came from a controller or a keyboard.
-public enum NavAction { Up, Down, Left, Right, Select, Back }
+public enum NavAction { Up, Down, Left, Right, Select, Back, VolumeDown, VolumeUp, Mute }
 
 // Turns raw controller readings into navigation actions: D-pad or stick to a direction,
 // stick deadzone, key repeat while a direction is held, and one Select/Back per button press.
@@ -15,6 +15,9 @@ public class ControllerInputMapper
     public const ushort DpadRight = 0x0008;
     public const ushort ButtonA = 0x1000;
     public const ushort ButtonB = 0x2000;
+    public const ushort ButtonY = 0x8000;
+    public const ushort LeftShoulder = 0x0100;
+    public const ushort RightShoulder = 0x0200;
 
     // Microsoft's recommended left-stick deadzone. Worn sticks rest slightly off-centre, so
     // anything this close to the middle counts as centred.
@@ -56,6 +59,9 @@ public class ControllerInputMapper
         // A and B fire once, on the poll where the button goes from up to down.
         if (JustPressed(buttons, ButtonA)) actions.Add(NavAction.Select);
         if (JustPressed(buttons, ButtonB)) actions.Add(NavAction.Back);
+        if (JustPressed(buttons, LeftShoulder)) actions.Add(NavAction.VolumeDown);
+        if (JustPressed(buttons, RightShoulder)) actions.Add(NavAction.VolumeUp);
+        if (JustPressed(buttons, ButtonY)) actions.Add(NavAction.Mute);
         _previousButtons = buttons;
 
         return actions;
