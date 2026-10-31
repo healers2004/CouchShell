@@ -1,0 +1,14 @@
+# C++ build output
+build/
+build-*/
+out/
+cmake-build-*/
+
+# Editor and OS
+.vscode/
+Thumbs.db
+.DS_Store
+
+# Tachyon data files
+tachyon.snapshot*
+tachyon.log.*
