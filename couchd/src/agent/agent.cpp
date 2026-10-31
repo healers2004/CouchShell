@@ -29,6 +29,10 @@ const std::int64_t kStartTimeoutMs = 120000;
 // Launchers and games sometimes swap processes, so a name must stay missing this long to count
 // as an exit.
 const std::int64_t kExitGraceMs = 5000;
+// Games take a while to open their window, which can appear behind other windows, and controllers
+// only reach the window in front. Long enough for a slow start, short enough not to fight someone
+// who later switches away on purpose.
+const std::int64_t kKeepInFrontMs = 45000;
 const int kVolumeStep = 5;
 
 // Only characters that can't break a space-separated request or a key name.
@@ -75,6 +79,10 @@ bool parse_app(const std::string& id, const std::map<std::string, std::string>& 
     app.target = field(fields, "target");
     app.args = field(fields, "args");
     app.process_name = field(fields, "processName");
+    app.user_agent = field(fields, "userAgent");
+    app.full_browser = field(fields, "window") == "browser";
+    app.install_folder = field(fields, "installFolder");
+    app.watch_windows = field(fields, "watch") == "window";
     const std::string type = field(fields, "type");
 
     if (type.empty() || app.target.empty()) {
@@ -93,14 +101,31 @@ bool parse_app(const std::string& id, const std::map<std::string, std::string>& 
             error = "The configured web address is not valid.";
             return false;
         }
+        // Goes inside quotes on the browser's command line, so a quote could end the argument.
+        if (app.user_agent.find('"') != std::string::npos) {
+            error = "The configured user agent is not valid.";
+            return false;
+        }
     } else if (type == "steam") {
         app.type = AppType::kSteam;
         if (!all_digits(app.target)) {
             error = "The configured Steam app id is not valid.";
             return false;
         }
-        if (app.process_name.empty()) {
-            error = "A Steam game needs a processName so CouchShell knows when it closes.";
+    } else if (type == "shell") {
+        app.type = AppType::kShell;
+        // An entry from Windows' All apps list. Names can contain spaces, but nothing else odd.
+        if (app.target.rfind("shell:AppsFolder\\", 0) != 0 ||
+            app.target.find_first_of("\"\r\n") != std::string::npos) {
+            error = "This app's address is not valid.";
+            return false;
+        }
+    } else if (type == "uri") {
+        app.type = AppType::kUri;
+        // Windows hands these to whatever program registered the scheme, so only known ones pass.
+        if (app.target.rfind("com.epicgames.launcher://", 0) != 0 ||
+            app.target.find_first_of("\" \t\r\n") != std::string::npos) {
+            error = "The configured launch address is not valid.";
             return false;
         }
     } else {
@@ -128,6 +153,16 @@ void Agent::handle_request(const std::string& request) {
 
     if (words[0] == "launch" && words.size() == 2) {
         handle_launch(words[1]);
+    } else if (words[0] == "leave" && words.size() == 1) {
+        // Stop tracking it but leave it running, like music playing in the background. To the
+        // rest of CouchShell this looks like the app ending, so it comes back as usual.
+        if (state_ == State::kRunning) mark_exited();
+    } else if (words[0] == "close" && words.size() == 1) {
+        if (state_ == State::kStarting) {
+            cancel_launch();
+        } else if (state_ == State::kRunning && !platform_.close_app()) {
+            std::cout << "couchd: could not close the running app" << std::endl;
+        }
     } else if (words[0] == "volume") {
         handle_volume(words);
     } else if (words[0] == "power" && words.size() == 2) {
@@ -147,10 +182,13 @@ void Agent::handle_launch(const std::string& id) {
         std::cout << "couchd: ignoring launch of an invalid app id" << std::endl;
         return;
     }
-    if (state_ != State::kIdle) {
+    if (state_ == State::kRunning) {
         fail_launch(id, "Another app is already running.");
         return;
     }
+    // Still waiting on an earlier launch, e.g. someone closed Steam's launch options dialog,
+    // which nothing reports. A new choice replaces it rather than being refused.
+    if (state_ == State::kStarting) cancel_launch();
 
     Reply hash;
     if (!bus_.run({"HGETALL", "app:" + id}, hash) || hash.kind != Reply::Kind::kArray) {
@@ -178,6 +216,19 @@ void Agent::handle_launch(const std::string& id) {
     state_ = State::kStarting;
     next_poll_ = 0;  // look straight away, so a normal launch reports "started" at once
     poll_app(started_at_);
+    // Not running yet, e.g. Steam is updating or showing a dialog. The UI gets out of the way, so
+    // that dialog can be used.
+    // A shell app is the exception: its window is found by watching what appears, and CouchShell
+    // staying in front until then makes that reliable.
+    if (state_ == State::kStarting && app.type != AppType::kShell) publish("launching " + id);
+}
+
+void Agent::cancel_launch() {
+    const std::string id = app_id_;
+    platform_.forget();
+    state_ = State::kIdle;
+    app_id_.clear();
+    publish("launch_cancelled " + id);
 }
 
 void Agent::handle_volume(const std::vector<std::string>& words) {
@@ -223,6 +274,7 @@ void Agent::handle_power(const std::string& action) {
 
 void Agent::mark_started() {
     state_ = State::kRunning;
+    keep_in_front_until_ = platform_.now_ms() + kKeepInFrontMs;
     enqueue({"SET", kRunningKey, app_id_});
     enqueue({"LPUSH", kRecentKey, app_id_});
     enqueue({"LTRIM", kRecentKey, "0", kRecentLimit});
@@ -262,6 +314,10 @@ void Agent::poll_app(std::int64_t now) {
             fail_launch(id, "It did not start in time.");
         }
         return;
+    }
+
+    if (process == ProcessState::kRunning && now < keep_in_front_until_) {
+        platform_.bring_app_to_front();
     }
 
     if (process == ProcessState::kExited) {

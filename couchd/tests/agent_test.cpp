@@ -32,6 +32,8 @@ public:
     bool power_ok = true;
     std::vector<PowerAction> power_calls;
     int forget_calls = 0;
+    int close_calls = 0;
+    int front_calls = 0;
 
     std::int64_t now_ms() override { return now; }
     bool launch(const AppSpec& app, const std::string& browser, std::string& error) override {
@@ -45,6 +47,11 @@ public:
     }
     ProcessState poll() override { return process; }
     void forget() override { ++forget_calls; }
+    bool close_app() override {
+        ++close_calls;
+        return true;
+    }
+    void bring_app_to_front() override { ++front_calls; }
     bool get_volume(int& out_percent, bool& out_muted) override {
         out_percent = percent;
         out_muted = muted;
@@ -188,14 +195,14 @@ TEST_F(AgentTest, SteamGameIsStartedOnlyOnceItsProcessAppears) {
     bus.hashes["app:game"] = {{"type", "steam"}, {"target", "440"}, {"processName", "hl2.exe"}};
     platform.process = ProcessState::kNotFound;
     agent.handle_request("launch game");
-    EXPECT_TRUE(bus.events().empty());
+    EXPECT_EQ(bus.events(), (Events{"launching game"}));
 
     advance(5000);
-    EXPECT_TRUE(bus.events().empty());
+    EXPECT_EQ(bus.events().size(), 1u);
 
     platform.process = ProcessState::kRunning;
     advance(5000);
-    EXPECT_EQ(bus.events(), (Events{"started game"}));
+    EXPECT_EQ(bus.events(), (Events{"launching game", "started game"}));
 }
 
 TEST_F(AgentTest, ProcessThatNeverAppearsGivesUpCleanly) {
@@ -204,7 +211,8 @@ TEST_F(AgentTest, ProcessThatNeverAppearsGivesUpCleanly) {
     agent.handle_request("launch game");
 
     advance(120001);
-    EXPECT_EQ(bus.events(), (Events{"launch_failed game It did not start in time."}));
+    EXPECT_EQ(bus.events(),
+              (Events{"launching game", "launch_failed game It did not start in time."}));
     EXPECT_EQ(platform.forget_calls, 1);
 
     // couchd is idle again, so another launch works.
@@ -220,7 +228,7 @@ TEST_F(AgentTest, MissingProcessNameCountsAsExitOnlyAfterAGracePeriod) {
     platform.process = ProcessState::kNotFound;
     advance(1000);
     advance(4000);
-    EXPECT_EQ(bus.events(), (Events{"started game"}));
+    EXPECT_EQ(bus.events().back(), "started game");
 
     // It came back (a launcher swapping processes), so the grace period starts over.
     platform.process = ProcessState::kRunning;
@@ -228,10 +236,10 @@ TEST_F(AgentTest, MissingProcessNameCountsAsExitOnlyAfterAGracePeriod) {
     platform.process = ProcessState::kNotFound;
     advance(1000);
     advance(4000);
-    EXPECT_EQ(bus.events(), (Events{"started game"}));
+    EXPECT_EQ(bus.events().back(), "started game");
 
     advance(1000);
-    EXPECT_EQ(bus.events(), (Events{"started game", "exited game"}));
+    EXPECT_EQ(bus.events().back(), "exited game");
 }
 
 TEST_F(AgentTest, EventsWaitForTachyonToComeBack) {
@@ -317,6 +325,103 @@ TEST_F(AgentTest, VolumeChangedOutsideCouchShellIsPublishedOnce) {
     EXPECT_EQ(bus.events().back(), "volume 70 0");
 }
 
+TEST_F(AgentTest, CloseOnlyActsWhileAnAppIsRunning) {
+    agent.handle_request("close");
+    EXPECT_EQ(platform.close_calls, 0);
+
+    agent.handle_request("launch notes");
+    agent.handle_request("close");
+    EXPECT_EQ(platform.close_calls, 1);
+}
+
+TEST_F(AgentTest, SteamWaitingOnADialogAnnouncesItselfAndCanBeCancelled) {
+    bus.hashes["app:game"] = {{"type", "steam"}, {"target", "440"}};
+    platform.process = ProcessState::kNotFound;
+    agent.handle_request("launch game");
+    EXPECT_EQ(bus.events(), (Events{"launching game"}));
+
+    agent.handle_request("close");
+    EXPECT_EQ(bus.events().back(), "launch_cancelled game");
+    EXPECT_EQ(platform.forget_calls, 1);
+    EXPECT_EQ(platform.close_calls, 0);
+
+    // Idle again, so the next launch works straight away.
+    platform.process = ProcessState::kRunning;
+    agent.handle_request("launch notes");
+    EXPECT_EQ(bus.events().back(), "started notes");
+}
+
+TEST_F(AgentTest, ANewLaunchReplacesOneStillWaiting) {
+    bus.hashes["app:game"] = {{"type", "steam"}, {"target", "440"}};
+    platform.process = ProcessState::kNotFound;
+    agent.handle_request("launch game");
+
+    platform.process = ProcessState::kRunning;
+    agent.handle_request("launch notes");
+    EXPECT_EQ(bus.events(), (Events{"launching game", "launch_cancelled game", "started notes"}));
+}
+
+TEST_F(AgentTest, KeepsTheAppInFrontOnlyWhileItStarts) {
+    agent.handle_request("launch notes");
+    advance(1000);
+    EXPECT_GT(platform.front_calls, 0);
+
+    platform.now += 45000;  // past the window
+    agent.tick();
+    int calls_after_window = platform.front_calls;
+    advance(1000);
+    advance(1000);
+    EXPECT_EQ(platform.front_calls, calls_after_window);
+}
+
+TEST_F(AgentTest, DoesNotBringAnythingForwardWhileWaitingOrIdle) {
+    bus.hashes["app:game"] = {{"type", "steam"}, {"target", "440"}};
+    platform.process = ProcessState::kNotFound;
+    agent.handle_request("launch game");
+    advance(1000);
+    advance(1000);
+    EXPECT_EQ(platform.front_calls, 0);  // Steam's dialog must keep focus
+
+    agent.handle_request("close");
+    advance(1000);
+    EXPECT_EQ(platform.front_calls, 0);
+}
+
+TEST_F(AgentTest, LeavingAnAppKeepsItRunningAndFreesCouchdForTheNextOne) {
+    agent.handle_request("leave");  // nothing running: nothing happens
+    EXPECT_TRUE(bus.events().empty());
+
+    agent.handle_request("launch notes");
+    agent.handle_request("leave");
+    EXPECT_EQ(bus.events().back(), "exited notes");
+    EXPECT_EQ(platform.close_calls, 0);  // it was never asked to close
+    EXPECT_EQ(platform.forget_calls, 1);
+    EXPECT_TRUE(bus.sent({"DEL", "couch:running"}));
+
+    agent.handle_request("launch notes");
+    EXPECT_EQ(bus.events().back(), "started notes");
+}
+
+TEST_F(AgentTest, LeavingDoesNothingWhileStillWaitingForALaunch) {
+    bus.hashes["app:game"] = {{"type", "steam"}, {"target", "440"}};
+    platform.process = ProcessState::kNotFound;
+    agent.handle_request("launch game");
+    agent.handle_request("leave");
+    EXPECT_EQ(bus.events(), (Events{"launching game"}));
+}
+
+TEST_F(AgentTest, NormalLaunchDoesNotAnnounceWaiting) {
+    agent.handle_request("launch notes");
+    EXPECT_EQ(bus.events(), (Events{"started notes"}));
+}
+
+TEST(ParseApp, SteamNeedsNoProcessName) {
+    AppSpec app;
+    std::string error;
+    EXPECT_TRUE(couchd::parse_app("a", {{"type", "steam"}, {"target", "440"}}, app, error));
+    EXPECT_TRUE(app.process_name.empty());
+}
+
 TEST_F(AgentTest, PowerRequests) {
     agent.handle_request("power sleep");
     agent.handle_request("power restart");
@@ -330,6 +435,57 @@ TEST_F(AgentTest, PowerRequests) {
     platform.power_ok = false;
     agent.handle_request("power sleep");
     EXPECT_EQ(bus.events(), (Events{"power_failed Windows refused."}));
+}
+
+TEST(ParseApp, AcceptsOnlyKnownLaunchAddresses) {
+    AppSpec app;
+    std::string error;
+    EXPECT_TRUE(couchd::parse_app(
+        "a", {{"type", "uri"}, {"target", "com.epicgames.launcher://apps/a%3Ab%3Ac?action=launch"}},
+        app, error));
+    EXPECT_EQ(app.type, AppType::kUri);
+    EXPECT_FALSE(
+        couchd::parse_app("a", {{"type", "uri"}, {"target", "file:///C:/evil.exe"}}, app, error));
+    EXPECT_FALSE(couchd::parse_app("a", {{"type", "uri"}, {"target", "ms-settings:"}}, app, error));
+    EXPECT_FALSE(couchd::parse_app(
+        "a", {{"type", "uri"}, {"target", "com.epicgames.launcher://a b"}}, app, error));
+}
+
+TEST(ParseApp, ReadsHowToWatchALauncher) {
+    AppSpec app;
+    std::string error;
+    EXPECT_TRUE(couchd::parse_app(
+        "a",
+        {{"type", "exe"}, {"target", "C:\\a.exe"}, {"installFolder", "C:\\a"}, {"watch", "window"}},
+        app, error));
+    EXPECT_TRUE(app.watch_windows);
+    EXPECT_EQ(app.install_folder, "C:\\a");
+}
+
+TEST(ParseApp, ReadsAnAppFromTheAllAppsList) {
+    AppSpec app;
+    std::string error;
+    EXPECT_TRUE(couchd::parse_app(
+        "a", {{"type", "shell"}, {"target", "shell:AppsFolder\\Spotify_abc!Spotify"}}, app, error));
+    EXPECT_EQ(app.type, AppType::kShell);
+    EXPECT_TRUE(couchd::parse_app(
+        "a", {{"type", "shell"}, {"target", "shell:AppsFolder\\C:\\My Apps\\a.exe"}}, app, error));
+
+    EXPECT_FALSE(
+        couchd::parse_app("a", {{"type", "shell"}, {"target", "C:\\evil.exe"}}, app, error));
+    EXPECT_FALSE(couchd::parse_app(
+        "a", {{"type", "shell"}, {"target", "shell:AppsFolder\\a\" --evil"}}, app, error));
+}
+
+TEST_F(AgentTest, ShellAppKeepsCouchShellVisibleUntilItsWindowAppears) {
+    bus.hashes["app:any"] = {{"type", "shell"}, {"target", "shell:AppsFolder\\x!y"}};
+    platform.process = ProcessState::kNotFound;
+    agent.handle_request("launch any");
+    EXPECT_TRUE(bus.events().empty());
+
+    platform.process = ProcessState::kRunning;
+    advance(1000);
+    EXPECT_EQ(bus.events(), (Events{"started any"}));
 }
 
 TEST(ParseApp, AcceptsEachType) {
@@ -355,7 +511,7 @@ TEST(ParseApp, RejectsMissingOrUnsafeFields) {
         {{"type", "web"}, {"target", "https://a.com\" --evil"}},
         {{"type", "web"}, {"target", "https://a.com --evil"}},
         {{"type", "steam"}, {"target", "440; calc"}, {"processName", "hl2.exe"}},
-        {{"type", "steam"}, {"target", "440"}},
+        {{"type", "web"}, {"target", "https://a.com"}, {"userAgent", "x\" --evil"}},
     };
     for (std::size_t i = 0; i < bad.size(); ++i) {
         AppSpec app;

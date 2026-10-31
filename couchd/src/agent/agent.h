@@ -18,7 +18,7 @@ const char* const kRequestChannel = "couch:requests";
 // Events go out here, e.g. "started youtube", "exited youtube", "volume 40 0".
 const char* const kEventChannel = "couch:events";
 
-enum class AppType { kExe, kWeb, kSteam };
+enum class AppType { kExe, kWeb, kSteam, kUri, kShell };
 
 struct AppSpec {
     std::string id;
@@ -26,6 +26,11 @@ struct AppSpec {
     std::string target;        // executable path, URL or Steam app id
     std::string args;          // extra command line, for executables
     std::string process_name;  // the process to watch, when it isn't the one started directly
+    std::string user_agent;    // for web apps: what the browser tells the site it is (may be empty)
+    bool full_browser = false;   // for web apps: a normal browser window, not a single-site one
+    std::string install_folder;  // where it's installed, to find its process and window
+    bool watch_windows =
+        false;  // "running" means it has a window, for launchers that sit in the tray
 };
 
 // Builds an AppSpec from an `app:<id>` hash. Returns false and sets a user-facing `error` if a
@@ -54,6 +59,10 @@ public:
     virtual ProcessState poll() = 0;
     // Stops watching that app; it keeps running if it's still alive.
     virtual void forget() = 0;
+    // Asks that app's windows to close, as if their X button were pressed. False if it can't.
+    virtual bool close_app() = 0;
+    // Brings that app's window to the front, if it has one yet and isn't already there.
+    virtual void bring_app_to_front() = 0;
 
     virtual bool get_volume(int& percent, bool& muted) = 0;
     virtual bool set_volume(int percent) = 0;
@@ -89,6 +98,7 @@ private:
     void fail_launch(const std::string& id, const std::string& reason);
     void mark_started();
     void mark_exited();
+    void cancel_launch();
     void poll_app(std::int64_t now);
     void check_volume();
 
@@ -106,6 +116,7 @@ private:
     std::string app_id_;
     std::int64_t started_at_ = 0;       // when the launch was requested
     std::int64_t not_found_since_ = 0;  // 0 while the watched process is present
+    std::int64_t keep_in_front_until_ = 0;
 
     std::int64_t next_poll_ = 0;
     std::int64_t next_heartbeat_ = 0;

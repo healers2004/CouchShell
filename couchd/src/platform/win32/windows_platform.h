@@ -2,6 +2,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "agent/agent.h"
 
@@ -23,6 +24,8 @@ public:
     explicit operator bool() const { return handle_ != nullptr; }
     // Closes the current handle and takes ownership of `handle`.
     void reset(void* handle = nullptr);
+    // Gives up ownership without closing, for handing the handle to another owner.
+    void release() { handle_ = nullptr; }
 
 private:
     void* handle_ = nullptr;
@@ -37,6 +40,8 @@ public:
     bool launch(const AppSpec& app, const std::string& browser, std::string& error) override;
     ProcessState poll() override;
     void forget() override;
+    bool close_app() override;
+    void bring_app_to_front() override;
     bool get_volume(int& percent, bool& muted) override;
     bool set_volume(int percent) override;
     bool set_muted(bool muted) override;
@@ -44,8 +49,18 @@ public:
 
 private:
     bool dry_run_power_;
-    UniqueHandle process_;       // the process being waited on, if known
-    std::wstring process_name_;  // look for this process when there's no handle (may be empty)
+    UniqueHandle process_;         // the process being waited on, if known
+    std::wstring process_name_;    // look for this process when there's no handle (may be empty)
+    std::wstring steam_app_id_;    // a Steam game with no process name: ask Steam if it's running
+    std::wstring install_folder_;  // a process or window from a program in here belongs to the app
+    bool watch_windows_ = false;   // the app counts as running only while it has a window
+
+    // An app from the All apps list starts with no handle, so it's identified by what appears.
+    void adopt_window(void* window);
+    bool looking_for_window_ = false;
+    std::vector<void*> windows_at_launch_;
+    void* front_at_launch_ = nullptr;
+    void* adopted_window_ = nullptr;  // used when the window's folder can't identify the app
 };
 
 }  // namespace couchd
