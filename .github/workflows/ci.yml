@@ -1,4 +1,4 @@
-# On every push and pull request: builds and tests couchd and Cushion on Linux and Windows,
+# On every push and pull request: builds and tests the vendored Tachyon on Linux and Windows,
 # and the UI on Windows.
 name: CI
 
@@ -33,12 +33,13 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Debug --output-on-failure
 
-      # The real redis-cli against the real couchd binary (built with sanitizers).
+      # The real redis-cli against the vendored Tachyon, built as part of CouchShell. Tachyon's own
+      # CI runs its slower crash, comparison and fuzz checks.
       - name: Smoke test with redis-cli (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y redis-tools
-          bash tools/smoke_test.sh build/couchd/couchd
+          bash vendor/tachyon/tools/smoke_test.sh build/vendor/tachyon/tachyon/tachyon
 
   # Builds the WPF app and runs its unit tests. WPF only exists on Windows.
   ui:
