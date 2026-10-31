@@ -32,7 +32,8 @@ public class AppCatalogTests
     [InlineData("""{ "id": "x", "name": "N", "type": "alien", "target": "x" }""")]
     [InlineData("""{ "id": "x", "name": "N", "category": "toys", "type": "exe", "target": "x" }""")]
     [InlineData("""{ "id": "x", "name": "N", "type": "web", "target": "file:///C:/secret" }""")]
-    [InlineData("""{ "id": "x", "name": "N", "type": "steam", "target": "440" }""")]
+    [InlineData("""{ "id": "x", "name": "N", "type": "shell", "target": "C:\\\\evil.exe" }""")]
+    [InlineData("""{ "id": "x", "name": "N", "type": "web", "target": "https://a.com", "controller": "psychic" }""")]
     [InlineData("""{ "id": "x", "name": "N", "type": "steam", "target": "abc", "processName": "x.exe" }""")]
     [InlineData("42")]
     public void BadEntryIsLoggedAndSkippedWithoutLosingTheOthers(string badEntry)
@@ -82,6 +83,55 @@ public class AppCatalogTests
     {
         Assert.Empty(AppCatalog.LoadFile("C:\\does\\not\\exist\\apps.json", _log.Add));
         Assert.Single(_log);
+    }
+
+    [Fact]
+    public void AppThatRequiresAMissingFileIsNotShown()
+    {
+        var missing = new AppDefinition("a", "A", "apps", "shell", @"shell:AppsFolder\a", Requires: @"C:\does\not\exist.exe");
+        var present = missing with { Requires = @"%SystemRoot%\System32\cmd.exe" };
+        Assert.False(AppCatalog.IsInstalled(missing));
+        Assert.True(AppCatalog.IsInstalled(present));
+    }
+
+    [Fact]
+    public void BadColourIsIgnoredAndTheAppKept()
+    {
+        List<AppDefinition> apps = Parse("""
+            { "apps": [ { "id": "a", "name": "A", "type": "exe", "target": "x", "color": "red; evil" } ] }
+            """);
+        Assert.Null(Assert.Single(apps).Color);
+    }
+
+    [Theory]
+    [InlineData("exe", "C:\\does\\not\\exist.exe", false)]
+    [InlineData("exe", "%SystemRoot%\\System32\\cmd.exe", true)]
+    [InlineData("web", "https://a.com", true)]
+    [InlineData("steam", "440", true)]
+    public void OnlyMissingProgramsCountAsNotInstalled(string type, string target, bool expected)
+    {
+        Assert.Equal(expected, AppCatalog.IsInstalled(new AppDefinition("a", "A", "apps", type, target)));
+    }
+
+    [Fact]
+    public void MergeKeepsTheFirstOfEachIdInOrder()
+    {
+        var mine = new AppDefinition("a", "Mine", "apps", "exe", "x");
+        var builtIn = new AppDefinition("a", "Built in", "apps", "exe", "y");
+        var other = new AppDefinition("b", "Other", "apps", "exe", "z");
+        Assert.Equal([mine, other], AppCatalog.Merge([mine], [builtIn, other]));
+    }
+
+    [Theory]
+    [InlineData("web", null, WebControlStyle.Pointer)]
+    [InlineData("web", "keys", WebControlStyle.Keys)]
+    [InlineData("web", "pointer", WebControlStyle.Pointer)]
+    [InlineData("steam", null, null)]
+    [InlineData("exe", null, null)]
+    [InlineData("exe", "pointer", WebControlStyle.Pointer)]
+    public void OnlyWebAppsGetControllerTranslation(string type, string? controller, WebControlStyle? expected)
+    {
+        Assert.Equal(expected, new AppDefinition("a", "A", "apps", type, "x", Controller: controller).WebControl);
     }
 
     [Fact]

@@ -8,9 +8,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Per-monitor DPI awareness, so the window stays sharp when the laptop and TV use different scaling. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Shown by Windows for the .exe; tools/make-icon.ps1 draws it. -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Lets the tests check the struct layouts that Win32 depends on. -->
+    <InternalsVisibleTo Include="CouchShell.Tests" />
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\Sounds\*.wav" />
     <!-- Copied next to the program, where it can be edited without recompiling. -->
     <Content Include="..\..\config\apps.json" Link="config\apps.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

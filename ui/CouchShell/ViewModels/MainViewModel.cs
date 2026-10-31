@@ -23,10 +23,23 @@ public class MainViewModel : ViewModelBase
     private const string GamesScreen = "Games";
     private const string WatchScreen = "Watch";
     private const string AppsScreen = "Apps";
+    private const string SearchScreen = "Search";
     private const string HistoryScreen = "History";
     private const string SettingsScreen = "Settings";
 
+    public const string SoundsOff = "off";
+    private const string DefaultSoundPack = "soft";
+    private static readonly (string Id, string Label)[] SoundPacks =
+        [("soft", "Soft"), ("click", "Click"), ("chime", "Chime"), (SoundsOff, "Off")];
+
+    private const int SlowPointer = 30;
+    private const int MediumPointer = 60;
+    private const int HighPointer = 100;  // anything faster is too fast to aim with
+    private const int PointerStep = 5;
+
     private const int RecentTiles = 6;
+    private const int SearchResults = 40;
+    private const string FirstSearchKey = "key:q";
     private const int HistoryTiles = 30;
     // How many checks in a row (one every 2 s) may fail before the UI comes back by itself, so
     // nobody is stranded behind a hidden window if couchd or Tachyon dies.
@@ -40,15 +53,20 @@ public class MainViewModel : ViewModelBase
     private List<AppDefinition> _apps = [];
     private List<string> _recent = [];
     private List<string> _sessions = [];
-    private string _browser = "edge";
+    private string _browser = "chrome";
     private string? _lastTile;
-    private string? _runningApp;
+    private string? _runningAppId;
+    private bool _isWaitingForLaunch;  // Steam is updating or showing a dialog, not running it yet
+    private TileViewModel? _focusedTile;
+    private List<AppDefinition> _installedApps = [];
+    private string _searchText = "";
     private int _missedChecks;
     private bool _focusPending = true;
 
     private string _currentScreen = HomeScreen;
     private bool _isConnected;
     private string? _message;
+    private string? _emptyText = "Connecting...";
     private int _volumePercent;
     private bool _isMuted;
     private bool _volumeKnown;
@@ -64,9 +82,11 @@ public class MainViewModel : ViewModelBase
         _catalog = catalog;
         _window = window;
 
-        string[] screens = [HomeScreen, GamesScreen, WatchScreen, AppsScreen, HistoryScreen, SettingsScreen];
+        string[] screens = [HomeScreen, GamesScreen, WatchScreen, AppsScreen, SearchScreen, HistoryScreen, SettingsScreen];
         Tabs = screens.Select(name => new TabViewModel(name, new RelayCommand(_ => OpenScreen(name)))).ToList();
         Tabs[0].IsCurrent = true;
+
+        SearchKeys = BuildSearchKeys();
 
         BackCommand = new RelayCommand(_ => Back());
         ConfirmYesCommand = new RelayCommand(_ => Guard(ConfirmYesAsync));
@@ -82,7 +102,39 @@ public class MainViewModel : ViewModelBase
         };
     }
 
+    // The running app's id. Changing it also tells the view how the controller should behave, so
+    // there's no way to leave the controller driving a web app that has gone.
+    private string? _runningApp
+    {
+        get => _runningAppId;
+        set
+        {
+            _runningAppId = value;
+            WebControlStyle? style = value != null && _isWaitingForLaunch
+                ? WebControlStyle.WaitingForLaunch
+                : FindApp(value)?.WebControl;
+            WebControlChanged?.Invoke(style);
+        }
+    }
+
+    // Null when the controller should go back to CouchShell's menus, or to a game's own handling.
+    public event Action<WebControlStyle?>? WebControlChanged;
+
+    // Comes back to CouchShell with the app still running.
+    public void LeaveRunningApp()
+    {
+        if (CanLeaveRunningApp) Guard(() => RequestAsync("leave"));
+    }
+
+    // Asks couchd to close the running app.
+    public void CloseRunningApp() => Guard(() => RequestAsync("close"));
+
+    // A volume action from the controller while a web app runs.
+    public void ChangeVolume(NavAction action) => Guard(() => RequestAsync(action == NavAction.VolumeUp ? "volume up" : "volume down"));
+
     public IReadOnlyList<TabViewModel> Tabs { get; }
+    public IReadOnlyList<IReadOnlyList<SearchKey>> SearchKeys { get; }
+    public bool IsSearchScreen => CurrentScreen == SearchScreen;
     public ObservableCollection<TileRow> Rows { get; } = [];
 
     public ICommand BackCommand { get; }
@@ -95,16 +147,90 @@ public class MainViewModel : ViewModelBase
     // Asks the view to focus a tile by key. Null means the first tile on the screen.
     public event Action<string?>? FocusRequested;
 
+    // What the preview area describes. Tracks focus, which only the view knows about.
+    public TileViewModel? FocusedTile
+    {
+        get => _focusedTile;
+        private set => Set(ref _focusedTile, value);
+    }
+
+    public void OnTileFocused(TileViewModel tile) => FocusedTile = tile;
+
+    public void OnSearchKeyFocused() => FocusedTile = SearchPreview();
+
+    // Arrives a little after startup, because reading every app and icon takes a moment.
+    public void SetInstalledApps(List<AppDefinition> apps)
+    {
+        _installedApps = apps;
+        if (!IsSearchScreen) return;
+        string? focused = FocusedTile?.Key;
+        RebuildRows();
+        if (focused != null && focused != SearchPreviewKey) FocusRequested?.Invoke(focused);
+    }
+
+    private const string SearchPreviewKey = "search:preview";
+
+    private TileViewModel SearchPreview() =>
+        new(SearchPreviewKey, _searchText.Length == 0 ? "Search" : _searchText, null, null, new RelayCommand(_ => { }),
+            Description: _searchText.Length == 0 ? "Find any app on this PC" : null);
+
+    private AppDefinition? FindApp(string? id) =>
+        _apps.Find(app => app.Id == id) ?? _installedApps.Find(app => app.Id == id);
+
+    private List<IReadOnlyList<SearchKey>> BuildSearchKeys()
+    {
+        string[] rows = ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"];
+        var keys = rows.Select(row => (IReadOnlyList<SearchKey>)row
+            .Select(c => new SearchKey(c.ToString().ToUpperInvariant(), "key:" + c, new RelayCommand(_ => TypeSearch(c.ToString()))))
+            .ToList()).ToList();
+        keys.Add(
+        [
+            new SearchKey("Space", "key:space", new RelayCommand(_ => TypeSearch(" ")), 260),
+            new SearchKey("Delete", "key:delete", new RelayCommand(_ => DeleteSearch()), 260),
+            new SearchKey("Clear", "key:clear", new RelayCommand(_ => SetSearch("")), 260),
+        ]);
+        return keys;
+    }
+
+    private void TypeSearch(string text) => SetSearch(_searchText + text);
+
+    private void DeleteSearch()
+    {
+        if (_searchText.Length > 0) SetSearch(_searchText[..^1]);
+    }
+
+    private void SetSearch(string text)
+    {
+        _searchText = text;
+        RebuildRows();
+        FocusedTile = SearchPreview();
+    }
+
     public string CurrentScreen
     {
         get => _currentScreen;
-        private set => Set(ref _currentScreen, value);
+        private set
+        {
+            Set(ref _currentScreen, value);
+            Notify(nameof(IsSearchScreen));
+        }
     }
 
     public bool IsConnected
     {
         get => _isConnected;
-        private set => Set(ref _isConnected, value);
+        private set
+        {
+            Set(ref _isConnected, value);
+            UpdateEmptyText();
+        }
+    }
+
+    // Shown instead of tiles when the screen has none. Null when there are tiles.
+    public string? EmptyText
+    {
+        get => _emptyText;
+        private set => Set(ref _emptyText, value);
     }
 
     // A short message for the user, e.g. why a launch failed.
@@ -149,6 +275,17 @@ public class MainViewModel : ViewModelBase
         get => _isConfirmOpen;
         private set => Set(ref _isConfirmOpen, value);
     }
+
+    // Which set of interface sounds to play, or SoundsOff.
+    public string SoundPack { get; private set; } = DefaultSoundPack;
+
+    // How fast the left stick moves the pointer, as a percentage of the fastest setting.
+    public int PointerSpeed { get; private set; } = MediumPointer;
+
+    // Things like music can carry on behind CouchShell. Not web apps: they share one browser, and
+    // a second site would hand off to the browser that's still open.
+    public bool CanLeaveRunningApp =>
+        _runningAppId != null && !_isWaitingForLaunch && FindApp(_runningAppId) is { Type: not "web" };
 
     public void ShowMessage(string message) => Message = message;
 
@@ -209,7 +346,13 @@ public class MainViewModel : ViewModelBase
         _apps = apps;
 
         Dictionary<string, string> settings = (await _client.SendAsync("HGETALL", SettingsKey)).ToDictionary();
-        _browser = settings.GetValueOrDefault("browser", "edge");
+        _browser = settings.GetValueOrDefault("browser", "chrome");
+        string pack = settings.GetValueOrDefault("sounds", DefaultSoundPack);
+        SoundPack = SoundPacks.Any(known => known.Id == pack) ? pack : DefaultSoundPack;
+        if (int.TryParse(settings.GetValueOrDefault("pointerSpeed"), NumberStyles.None, CultureInfo.InvariantCulture, out int speed))
+        {
+            PointerSpeed = Math.Clamp(speed, PointerStep, HighPointer);
+        }
         _lastTile = settings.GetValueOrDefault("lastTile");
 
         Dictionary<string, string> volume = (await _client.SendAsync("HGETALL", VolumeKey)).ToDictionary();
@@ -245,6 +388,7 @@ public class MainViewModel : ViewModelBase
         else if (_window.IsHidden)
         {
             string? finished = _runningApp;
+            _isWaitingForLaunch = false;
             _runningApp = null;
             await ComeBackAsync(finished);
         }
@@ -262,7 +406,7 @@ public class MainViewModel : ViewModelBase
         try
         {
             string? running = (await _client.SendAsync("GET", RunningKey)).Text;
-            if (running == null)
+            if (running == null && !_isWaitingForLaunch)
             {
                 await FinishAppAsync(_runningApp);
                 return;
@@ -278,6 +422,7 @@ public class MainViewModel : ViewModelBase
         if (_missedChecks >= MaxMissedChecks)
         {
             string finished = _runningApp;
+            _isWaitingForLaunch = false;
             _runningApp = null;
             _missedChecks = 0;
             _window.RestoreAndFocus();
@@ -294,17 +439,35 @@ public class MainViewModel : ViewModelBase
 
         switch (kind)
         {
-            case "started":
-                _runningApp = argument;
+            case "launching":
+                // Get out of the way, so that whatever Steam is showing can be used.
+                _isWaitingForLaunch = true;
                 _missedChecks = 0;
                 Message = null;
                 _window.Hide();
+                _runningApp = argument;
+                break;
+            case "started":
+                _isWaitingForLaunch = false;
+                _missedChecks = 0;
+                Message = null;
+                _window.Hide();
+                _runningApp = argument;
+                break;
+            case "launch_cancelled":
+                _isWaitingForLaunch = false;
+                await FinishAppAsync(argument);
                 break;
             case "exited":
                 await FinishAppAsync(argument);
                 break;
             case "launch_failed":
-                _runningApp = null;
+                bool wasWaiting = _isWaitingForLaunch && argument == _runningApp;
+                if (wasWaiting)
+                {
+                    _isWaitingForLaunch = false;
+                    await FinishAppAsync(argument);
+                }
                 string reason = parts.Length > 2 ? parts[2] : "";
                 Message = $"Unable to launch {AppName(argument)}. {reason}";
                 break;
@@ -319,6 +482,7 @@ public class MainViewModel : ViewModelBase
 
     private async Task FinishAppAsync(string id)
     {
+        _isWaitingForLaunch = false;
         _runningApp = null;
         await ComeBackAsync(id);
     }
@@ -359,16 +523,23 @@ public class MainViewModel : ViewModelBase
         if (version == _volumeOverlayVersion) IsVolumeVisible = false;
     }
 
+    // Selecting a tab: show its screen and move into it.
     private void OpenScreen(string name)
     {
-        if (name != CurrentScreen)
-        {
-            CurrentScreen = name;
-            foreach (TabViewModel tab in Tabs) tab.IsCurrent = tab.Name == name;
-            RebuildRows();
-        }
+        ShowScreen(name);
         Message = null;
-        FocusRequested?.Invoke(null);
+        FocusRequested?.Invoke(name == SearchScreen ? FirstSearchKey : null);
+    }
+
+    // Moving onto a tab: show what's in its screen, with focus staying on the tab.
+    public void ShowScreen(string name)
+    {
+        if (name == CurrentScreen) return;
+        _searchText = "";
+        CurrentScreen = name;
+        foreach (TabViewModel tab in Tabs) tab.IsCurrent = tab.Name == name;
+        RebuildRows();
+        FocusedTile = IsSearchScreen ? SearchPreview() : Rows.FirstOrDefault()?.Tiles.FirstOrDefault();
     }
 
     private void Back()
@@ -379,6 +550,12 @@ public class MainViewModel : ViewModelBase
             return;
         }
         Message = null;
+        // While searching, B works like backspace, as it does on the on-screen keyboard.
+        if (IsSearchScreen && _searchText.Length > 0)
+        {
+            DeleteSearch();
+            return;
+        }
         if (CurrentScreen != HomeScreen) OpenScreen(HomeScreen);
     }
 
@@ -400,6 +577,10 @@ public class MainViewModel : ViewModelBase
             case AppsScreen:
                 AddAppRow("Apps", _apps.Where(app => app.Category == "apps"));
                 break;
+            case SearchScreen:
+                AddAppRow(_searchText.Length == 0 ? "All apps" : "Results",
+                    InstalledApps.Search(_installedApps, _searchText).Take(SearchResults));
+                break;
             case HistoryScreen:
                 AddHistoryRow();
                 break;
@@ -407,12 +588,35 @@ public class MainViewModel : ViewModelBase
                 AddSettingsRows();
                 break;
         }
+        if (Rows.Count == 0) FocusedTile = null;
+        UpdateEmptyText();
+    }
+
+    private void UpdateEmptyText()
+    {
+        if (Rows.Count > 0)
+        {
+            EmptyText = null;
+        }
+        else if (!IsConnected)
+        {
+            EmptyText = "Connecting...";
+        }
+        else
+        {
+            EmptyText = CurrentScreen switch
+            {
+                HistoryScreen => "Nothing played yet.",
+                SearchScreen => _installedApps.Count == 0 ? "Finding your apps..." : "No apps match that.",
+                _ => "No apps here yet. Add some to apps.json.",
+            };
+        }
     }
 
     private void AddRecentRow()
     {
         var recent = _recent.Distinct()
-            .Select(id => _apps.Find(app => app.Id == id))
+            .Select(id => FindApp(id))
             .OfType<AppDefinition>()
             .Take(RecentTiles);
         AddAppRow("Recently used", recent);
@@ -421,11 +625,30 @@ public class MainViewModel : ViewModelBase
     private void AddAppRow(string title, IEnumerable<AppDefinition> apps)
     {
         List<TileViewModel> tiles = apps
-            .Select(app => new TileViewModel(app.Id, app.Name, null, app.Image,
-                new RelayCommand(_ => Guard(() => LaunchAsync(app)))))
+            .Select(app => TileFor(app, new RelayCommand(_ => Guard(() => LaunchAsync(app)))))
             .ToList();
         if (tiles.Count > 0) Rows.Add(new TileRow(title, tiles));
     }
+
+    private static TileViewModel TileFor(AppDefinition app, ICommand command)
+    {
+        BrandLogo? logo = BrandLogos.Find(app.Logo);
+        return new TileViewModel(app.Id, app.Name, null, app.Image, command,
+            Accent: app.Color ?? logo?.Accent ?? BrandLogos.DefaultAccent,
+            LogoPath: app.Image == null ? logo?.Path : null,
+            LogoColor: logo?.Color,
+            Backdrop: app.Backdrop,
+            Description: DescribeApp(app),
+            ActionLabel: app.Category == "games" ? "Play" : "Open",
+            IconPath: app.Image == null && logo == null ? app.Icon : null);
+    }
+
+    private static string DescribeApp(AppDefinition app) => app.Source ?? app.Type switch
+    {
+        "steam" => "Steam game",
+        "web" => app.Window == "browser" ? "Web browser" : "Web app",
+        _ => "App",
+    };
 
     private void AddHistoryRow()
     {
@@ -440,7 +663,12 @@ public class MainViewModel : ViewModelBase
             {
                 continue;
             }
-            tiles.Add(new TileViewModel("session:" + i, AppName(parts[0]), DescribeSession(start, end), null, doNothing));
+            AppDefinition? app = FindApp(parts[0]);
+            TileViewModel tile = app != null
+                ? TileFor(app, doNothing)
+                : new TileViewModel("", parts[0], null, null, doNothing, Glyphs.History);
+            string when = DescribeSession(start, end);
+            tiles.Add(tile with { Key = "session:" + i, Subtitle = when, Description = when });
         }
         if (tiles.Count > 0) Rows.Add(new TileRow("Play history", tiles));
     }
@@ -457,28 +685,46 @@ public class MainViewModel : ViewModelBase
     {
         Rows.Add(new TileRow("Browser for web apps",
         [
-            BrowserTile("edge", "Microsoft Edge"),
             BrowserTile("chrome", "Google Chrome"),
+            BrowserTile("edge", "Microsoft Edge"),
         ]));
         Rows.Add(new TileRow("Sound",
         [
-            new TileViewModel("sound:down", "Volume down", "LB", null, VolumeDownCommand),
-            new TileViewModel("sound:up", "Volume up", "RB", null, VolumeUpCommand),
-            new TileViewModel("sound:mute", "Mute", "Y", null, MuteCommand),
+            new TileViewModel("sound:down", "Volume down", null, null, VolumeDownCommand, Glyphs.VolumeDown, Description: "Also LB on the controller"),
+            new TileViewModel("sound:up", "Volume up", null, null, VolumeUpCommand, Glyphs.VolumeUp, Description: "Also RB on the controller"),
+            new TileViewModel("sound:mute", "Mute", null, null, MuteCommand, Glyphs.Mute, Description: "Also Y on the controller"),
+            new TileViewModel("sound:ui", "Interface sounds", SoundPacks.First(known => known.Id == SoundPack).Label, null,
+                new RelayCommand(_ => Guard(NextSoundPackAsync)), Glyphs.Sounds, Description: "Press A to try the next style, then move to hear it"),
+        ]));
+        Rows.Add(new TileRow("Pointer speed",
+        [
+            PointerTile("Slow", SlowPointer),
+            PointerTile("Medium", MediumPointer),
+            PointerTile("High", HighPointer),
+        ]));
+        Rows.Add(new TileRow("Pointer speed: advanced",
+        [
+            new TileViewModel("pointer:slower", "Slower", $"Now {PointerSpeed}%", null,
+                new RelayCommand(_ => Guard(() => SetPointerSpeedAsync(PointerSpeed - PointerStep, "pointer:slower"))), Glyphs.Slower,
+                Description: $"How fast the left stick moves the pointer in apps, in steps of {PointerStep}%"),
+            new TileViewModel("pointer:faster", "Faster", $"Now {PointerSpeed}%", null,
+                new RelayCommand(_ => Guard(() => SetPointerSpeedAsync(PointerSpeed + PointerStep, "pointer:faster"))), Glyphs.Faster,
+                Description: $"How fast the left stick moves the pointer in apps, in steps of {PointerStep}%"),
         ]));
         Rows.Add(new TileRow("Power",
         [
-            PowerTile("sleep", "Sleep", "Put the PC to sleep?"),
-            PowerTile("restart", "Restart", "Restart the PC?"),
-            PowerTile("shutdown", "Shut down", "Shut down the PC?"),
+            PowerTile("sleep", "Sleep", "Put the PC to sleep?", Glyphs.Sleep),
+            PowerTile("restart", "Restart", "Restart the PC?", Glyphs.Restart),
+            PowerTile("shutdown", "Shut down", "Shut down the PC?", Glyphs.Power),
         ]));
     }
 
     private TileViewModel BrowserTile(string id, string name) =>
         new("browser:" + id, name, _browser == id ? "Selected" : null, null,
-            new RelayCommand(_ => Guard(() => SetBrowserAsync(id))));
+            new RelayCommand(_ => Guard(() => SetBrowserAsync(id))), Glyphs.Globe,
+            Description: "The browser that web apps open in");
 
-    private TileViewModel PowerTile(string action, string name, string question)
+    private TileViewModel PowerTile(string action, string name, string question, string glyph)
     {
         string key = "power:" + action;
         return new TileViewModel(key, name, null, null, new RelayCommand(_ =>
@@ -487,7 +733,7 @@ public class MainViewModel : ViewModelBase
             _confirmReturnKey = key;
             ConfirmText = question;
             FocusRequested?.Invoke("confirm:no");  // the safe answer starts focused
-        }));
+        }), glyph, Description: "Asks you to confirm first");
     }
 
     private async Task ConfirmYesAsync()
@@ -502,6 +748,30 @@ public class MainViewModel : ViewModelBase
         _confirmAction = null;
         ConfirmText = null;
         FocusRequested?.Invoke(_confirmReturnKey);
+    }
+
+    private TileViewModel PointerTile(string name, int percent) =>
+        new("pointer:" + percent, name, PointerSpeed == percent ? "Selected" : $"{percent}%", null,
+            new RelayCommand(_ => Guard(() => SetPointerSpeedAsync(percent, "pointer:" + percent))), Glyphs.Pointer,
+            Description: "How fast the left stick moves the pointer in apps");
+
+    private async Task SetPointerSpeedAsync(int percent, string focusKey)
+    {
+        int speed = Math.Clamp(percent, PointerStep, HighPointer);
+        await _client.SendAsync("HSET", SettingsKey, "pointerSpeed", speed.ToString(CultureInfo.InvariantCulture));
+        PointerSpeed = speed;
+        RebuildRows();
+        FocusRequested?.Invoke(focusKey);
+    }
+
+    private async Task NextSoundPackAsync()
+    {
+        int current = Array.FindIndex(SoundPacks, known => known.Id == SoundPack);
+        string next = SoundPacks[(current + 1) % SoundPacks.Length].Id;
+        await _client.SendAsync("HSET", SettingsKey, "sounds", next);
+        SoundPack = next;
+        RebuildRows();
+        FocusRequested?.Invoke("sound:ui");
     }
 
     private async Task SetBrowserAsync(string id)
@@ -519,6 +789,8 @@ public class MainViewModel : ViewModelBase
         try
         {
             await _client.SendAsync("HSET", SettingsKey, "lastTile", app.Id);
+            // Apps found by search aren't in the catalog, so couchd hears about them here.
+            if (app.Type == "shell") await _client.SendAsync(["HSET", "app:" + app.Id, .. app.ToHashFields()]);
             long listeners = (await _client.SendAsync("PUBLISH", RequestChannel, "launch " + app.Id)).Integer;
             if (listeners == 0) Message = $"Unable to launch {app.Name}. CouchShell's background service isn't running.";
         }
@@ -542,5 +814,5 @@ public class MainViewModel : ViewModelBase
         }
     }
 
-    private string AppName(string id) => _apps.Find(app => app.Id == id)?.Name ?? id;
+    private string AppName(string id) => FindApp(id)?.Name ?? id;
 }

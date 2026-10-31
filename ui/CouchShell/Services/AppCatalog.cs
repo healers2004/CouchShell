@@ -12,14 +12,26 @@ public sealed record AppDefinition(
     string Target,
     string? Args = null,
     string? ProcessName = null,
-    string? Image = null)
+    string? Image = null,
+    string? Controller = null,
+    string? UserAgent = null,
+    string? Backdrop = null,
+    string? Logo = null,
+    string? Color = null,
+    string? Window = null,
+    string? InstallFolder = null,
+    string? Source = null,
+    string? Watch = null,
+    string? Icon = null,
+    string? Requires = null)
 {
     // As stored in the app:<id> hash in Tachyon. Empty optional fields are left out.
     public IEnumerable<string> ToHashFields()
     {
         string[] fields = ["id", Id, "name", Name, "category", Category, "type", Type, "target", Target];
         foreach (string field in fields) yield return field;
-        foreach ((string name, string? value) in new[] { ("args", Args), ("processName", ProcessName), ("image", Image) })
+        foreach ((string name, string? value) in new[] { ("args", Args), ("processName", ProcessName), ("image", Image), ("controller", Controller), ("userAgent", UserAgent),
+            ("backdrop", Backdrop), ("logo", Logo), ("color", Color), ("window", Window), ("installFolder", InstallFolder), ("source", Source), ("watch", Watch), ("icon", Icon) })
         {
             if (string.IsNullOrEmpty(value)) continue;
             yield return name;
@@ -38,8 +50,24 @@ public sealed record AppDefinition(
             fields.GetValueOrDefault("target", ""),
             fields.GetValueOrDefault("args"),
             fields.GetValueOrDefault("processName"),
-            fields.GetValueOrDefault("image"));
+            fields.GetValueOrDefault("image"),
+            fields.GetValueOrDefault("controller"),
+            fields.GetValueOrDefault("userAgent"),
+            fields.GetValueOrDefault("backdrop"),
+            fields.GetValueOrDefault("logo"),
+            fields.GetValueOrDefault("color"),
+            fields.GetValueOrDefault("window"),
+            fields.GetValueOrDefault("installFolder"),
+            fields.GetValueOrDefault("source"),
+            fields.GetValueOrDefault("watch"),
+            fields.GetValueOrDefault("icon"));
     }
+
+    // How the controller drives this app, if it's a web app. Games read the controller themselves.
+    // Anything else that can't use a controller, like a game launcher, asks for it with "controller".
+    public WebControlStyle? WebControl => Type != "web" && Controller == null
+        ? null
+        : Controller == "keys" ? WebControlStyle.Keys : WebControlStyle.Pointer;
 }
 
 // Reads and validates apps.json. A bad entry is logged and skipped, never fatal.
@@ -52,13 +80,34 @@ public static partial class AppCatalog
     [GeneratedRegex("^[a-z0-9_-]{1,64}$")]
     private static partial Regex IdPattern();
 
-    // A copy in %LOCALAPPDATA% wins, so it can be edited without touching the installed files.
-    public static string DefaultPath()
+    [GeneratedRegex("^#[0-9a-fA-F]{6}$")]
+    private static partial Regex ColorPattern();
+
+    // Everything on the home screen: your own additions first, then the apps that ship with
+    // CouchShell, then installed games, then the launchers. Your own file can replace a built-in app by reusing its id.
+    public static List<AppDefinition> LoadAll(Action<string> log)
     {
         string personal = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CouchShell", "apps.json");
-        return File.Exists(personal) ? personal : Path.Combine(AppContext.BaseDirectory, "config", "apps.json");
+        string bundled = Path.Combine(AppContext.BaseDirectory, "config", "apps.json");
+
+        List<AppDefinition> own = File.Exists(personal) ? LoadFile(personal, log) : [];
+        string steam = SteamLibrary.FindSteamFolder();
+        return Merge(own, LoadFile(bundled, log), SteamLibrary.Scan(steam, log), GameLibraries.FindGames(log),
+                GameLibraries.FindLaunchers(steam, log))
+            .Where(IsInstalled)
+            .ToList();
     }
+
+    // A tile that can only fail isn't worth showing. Only programs can be checked this way.
+    public static bool IsInstalled(AppDefinition app) =>
+        (app.Type != "exe" || File.Exists(Environment.ExpandEnvironmentVariables(app.Target))) &&
+        (app.InstallFolder == null || Directory.Exists(app.InstallFolder)) &&
+        (app.Requires == null || File.Exists(Environment.ExpandEnvironmentVariables(app.Requires)));
+
+    // Earlier lists win when two apps share an id.
+    public static List<AppDefinition> Merge(params IEnumerable<AppDefinition>[] lists) =>
+        lists.SelectMany(list => list).DistinctBy(app => app.Id).ToList();
 
     public static List<AppDefinition> LoadFile(string path, Action<string> log)
     {
@@ -146,9 +195,13 @@ public static partial class AppCatalog
         {
             problem = "\"target\" is missing.";
         }
-        else if (type is not ("exe" or "web" or "steam"))
+        else if (type is not ("exe" or "web" or "steam" or "shell"))
         {
-            problem = "\"type\" must be exe, web or steam.";
+            problem = "\"type\" must be exe, web, steam or shell.";
+        }
+        else if (type == "shell" && !target.StartsWith(@"shell:AppsFolder\", StringComparison.Ordinal))
+        {
+            problem = "a shell app's target must start with shell:AppsFolder\\.";
         }
         else if (!Categories.Contains(category))
         {
@@ -158,14 +211,19 @@ public static partial class AppCatalog
         {
             problem = "a web app needs an http or https address.";
         }
-        else if (type == "steam" && (processName == null || !target.All(char.IsAsciiDigit)))
+        else if (type == "steam" && !target.All(char.IsAsciiDigit))
         {
-            problem = "a Steam app needs a numeric target and a processName.";
+            problem = "a Steam app needs a numeric target.";
+        }
+        else if (Text(entry, "controller") is not (null or "pointer" or "keys"))
+        {
+            problem = "\"controller\" must be pointer or keys.";
         }
         if (problem != null) return null;
 
         return new AppDefinition(id!, name!, category, type!, target!, Text(entry, "args"), processName,
-            ResolveImage(Text(entry, "image"), baseFolder));
+            ResolveImage(Text(entry, "image"), baseFolder), Text(entry, "controller"), Text(entry, "userAgent"),
+            Logo: Text(entry, "logo"), Color: ValidColor(Text(entry, "color")), Window: Text(entry, "window"), Requires: Text(entry, "requires"));
     }
 
     // A missing image isn't an error: the tile just shows its name.
@@ -175,6 +233,10 @@ public static partial class AppCatalog
         string path = Path.GetFullPath(image, string.IsNullOrEmpty(baseFolder) ? Directory.GetCurrentDirectory() : baseFolder);
         return File.Exists(path) ? path : null;
     }
+
+    // Goes straight into a WPF brush, where a bad value would be a binding error.
+    private static string? ValidColor(string? color) =>
+        color != null && ColorPattern().IsMatch(color) ? color : null;
 
     private static string? Text(JsonElement entry, string name) =>
         entry.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String &&

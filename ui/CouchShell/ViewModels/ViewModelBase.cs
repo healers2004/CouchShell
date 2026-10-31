@@ -12,6 +12,8 @@ public abstract class ViewModelBase : INotifyPropertyChanged
     {
         if (EqualityComparer<T>.Default.Equals(field, value)) return;
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        Notify(name);
     }
+
+    protected void Notify(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

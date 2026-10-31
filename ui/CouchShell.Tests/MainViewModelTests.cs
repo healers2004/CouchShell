@@ -275,12 +275,251 @@ public class MainViewModelTests
     {
         _client.Connect();
         Open("Settings");
-        Assert.Equal("Selected", Tile("browser:edge").Subtitle);
-
-        Tile("browser:chrome").Command.Execute(null);
-        Assert.Equal("chrome", _client.Hashes["couch:settings"]["browser"]);
         Assert.Equal("Selected", Tile("browser:chrome").Subtitle);
-        Assert.Null(Tile("browser:edge").Subtitle);
+
+        Tile("browser:edge").Command.Execute(null);
+        Assert.Equal("edge", _client.Hashes["couch:settings"]["browser"]);
+        Assert.Equal("Selected", Tile("browser:edge").Subtitle);
+        Assert.Null(Tile("browser:chrome").Subtitle);
+    }
+
+    [Fact]
+    public void InterfaceSoundsCycleThroughStylesAndOffAndAreRemembered()
+    {
+        _client.Connect();
+        Assert.Equal("soft", _viewModel.SoundPack);
+        Open("Settings");
+        Assert.Equal("Soft", Tile("sound:ui").Subtitle);
+
+        Tile("sound:ui").Command.Execute(null);
+        Assert.Equal("click", _viewModel.SoundPack);
+        Tile("sound:ui").Command.Execute(null);
+        Assert.Equal("chime", _viewModel.SoundPack);
+        Tile("sound:ui").Command.Execute(null);
+        Assert.Equal(MainViewModel.SoundsOff, _viewModel.SoundPack);
+        Assert.Equal("Off", Tile("sound:ui").Subtitle);
+        Assert.Equal("off", _client.Hashes["couch:settings"]["sounds"]);
+        Assert.Equal("sound:ui", _focus.Last());
+
+        var restarted = new MainViewModel(_client, [], _window);
+        _client.Connect();
+        Assert.Equal(MainViewModel.SoundsOff, restarted.SoundPack);
+
+        Tile("sound:ui").Command.Execute(null);
+        Assert.Equal("soft", _viewModel.SoundPack);
+    }
+
+    [Fact]
+    public void AnOldOrUnknownSoundSettingFallsBackToTheDefault()
+    {
+        _client.Hashes["couch:settings"] = new() { ["sounds"] = "on" };
+        _client.Connect();
+        Assert.Equal("soft", _viewModel.SoundPack);
+    }
+
+    [Fact]
+    public void PointerSpeedPresetsAreSavedAndShown()
+    {
+        _client.Connect();
+        Assert.Equal(60, _viewModel.PointerSpeed);
+        Open("Settings");
+        Assert.Equal("Selected", Tile("pointer:60").Subtitle);
+
+        Tile("pointer:100").Command.Execute(null);
+        Assert.Equal(100, _viewModel.PointerSpeed);
+        Assert.Equal("100", _client.Hashes["couch:settings"]["pointerSpeed"]);
+        Assert.Equal("Selected", Tile("pointer:100").Subtitle);
+        Assert.Equal("60%", Tile("pointer:60").Subtitle);
+        Assert.Equal("pointer:100", _focus.Last());
+    }
+
+    [Fact]
+    public void AdvancedPointerSpeedStepsAndStopsAtTheLimits()
+    {
+        _client.Connect();
+        Open("Settings");
+        Tile("pointer:slower").Command.Execute(null);
+        Assert.Equal(55, _viewModel.PointerSpeed);
+        Assert.Equal("Now 55%", Tile("pointer:slower").Subtitle);
+
+        Tile("pointer:100").Command.Execute(null);
+        Tile("pointer:faster").Command.Execute(null);
+        Assert.Equal(100, _viewModel.PointerSpeed);  // High is the top
+
+        for (int i = 0; i < 30; i++) Tile("pointer:slower").Command.Execute(null);
+        Assert.Equal(5, _viewModel.PointerSpeed);  // never so slow it stops
+    }
+
+    [Theory]
+    [InlineData("100", 100)]
+    [InlineData("45", 45)]
+    [InlineData("9999", 100)]
+    [InlineData("0", 5)]
+    [InlineData("fast", 60)]
+    public void SavedPointerSpeedIsRememberedWithinLimits(string saved, int expected)
+    {
+        _client.Hashes["couch:settings"] = new() { ["pointerSpeed"] = saved };
+        _client.Connect();
+        Assert.Equal(expected, _viewModel.PointerSpeed);
+    }
+
+    [Fact]
+    public void TappingViewLeavesAnAppRunningButNotAWebApp()
+    {
+        _client.Connect();
+        _viewModel.SetInstalledApps(Installed);
+        string discord = Installed[1].Id;
+
+        _client.Event("started " + discord);
+        Assert.True(_viewModel.CanLeaveRunningApp);
+        _viewModel.LeaveRunningApp();
+        Assert.Equal("leave", _client.Published.Last());
+
+        _client.Event("exited " + discord);
+        Assert.False(_window.IsHidden);
+        Assert.False(_viewModel.CanLeaveRunningApp);
+
+        _client.Published.Clear();
+        _client.Event("started video");
+        Assert.False(_viewModel.CanLeaveRunningApp);
+        _viewModel.LeaveRunningApp();
+        Assert.Empty(_client.Published);
+    }
+
+    [Fact]
+    public void GamesFromOtherStoresSayWhereTheyAreFrom()
+    {
+        var viewModel = new MainViewModel(_client,
+            [new AppDefinition("riot-valorant", "VALORANT", "games", "exe", "x", Logo: "riot", Source: "Riot Games")], _window);
+        _client.Connect();
+        TileViewModel tile = viewModel.Rows[0].Tiles[0];
+        Assert.Equal("Riot Games", tile.Description);
+        Assert.Equal("Play", tile.ActionLabel);
+        Assert.NotNull(tile.LogoPath);
+    }
+
+    private static readonly List<AppDefinition> Installed =
+    [
+        InstalledApps.ToApp("Calculator", "calc!App", null),
+        InstalledApps.ToApp("Discord", "discord", "icon.png"),
+        InstalledApps.ToApp("Google Chrome", "Chrome", null),
+    ];
+
+    private SearchKey Key(string label) => _viewModel.SearchKeys.SelectMany(row => row).First(key => key.Label == label);
+    private List<string> ResultTitles() => _viewModel.Rows.SelectMany(row => row.Tiles).Select(tile => tile.Title).ToList();
+
+    [Fact]
+    public void SearchFiltersAppsAsYouType()
+    {
+        _client.Connect();
+        _viewModel.SetInstalledApps(Installed);
+        Open("Search");
+        Assert.True(_viewModel.IsSearchScreen);
+        Assert.Equal(["Calculator", "Discord", "Google Chrome"], ResultTitles());
+        Assert.Equal("key:q", _focus.Last());
+        Assert.Equal("Search", _viewModel.FocusedTile?.Title);
+
+        Key("D").Command.Execute(null);
+        Key("I").Command.Execute(null);
+        Assert.Equal(["Discord"], ResultTitles());
+        Assert.Equal("di", _viewModel.FocusedTile?.Title);
+
+        Key("Delete").Command.Execute(null);
+        Key("Clear").Command.Execute(null);
+        Assert.Equal(3, ResultTitles().Count);
+
+        Key("Z").Command.Execute(null);
+        Assert.Empty(ResultTitles());
+        Assert.Equal("No apps match that.", _viewModel.EmptyText);
+    }
+
+    [Fact]
+    public void BackDeletesWhileSearchingThenGoesHome()
+    {
+        _client.Connect();
+        _viewModel.SetInstalledApps(Installed);
+        Open("Search");
+        Key("C").Command.Execute(null);
+
+        _viewModel.BackCommand.Execute(null);
+        Assert.Equal("Search", _viewModel.CurrentScreen);
+        Assert.Equal("Search", _viewModel.FocusedTile?.Title);
+
+        _viewModel.BackCommand.Execute(null);
+        Assert.Equal("Home", _viewModel.CurrentScreen);
+    }
+
+    [Fact]
+    public void LeavingSearchForgetsTheText()
+    {
+        _client.Connect();
+        _viewModel.SetInstalledApps(Installed);
+        Open("Search");
+        Key("Z").Command.Execute(null);
+        Open("Home");
+        Open("Search");
+        Assert.Equal(3, ResultTitles().Count);
+    }
+
+    [Fact]
+    public void AppFoundBySearchLaunchesAndUsesThePointer()
+    {
+        var seen = new List<WebControlStyle?>();
+        _viewModel.WebControlChanged += style => seen.Add(style);
+        _client.Connect();
+        _viewModel.SetInstalledApps(Installed);
+        Open("Search");
+
+        TileViewModel discord = _viewModel.Rows[0].Tiles.First(tile => tile.Title == "Discord");
+        Assert.Equal("icon.png", discord.IconPath);
+        Assert.Null(discord.Monogram);
+        discord.Command.Execute(null);
+
+        // couchd can only start what it can read about, and this app isn't in the catalog.
+        Assert.Equal("shell", _client.Hashes["app:" + discord.Key]["type"]);
+        Assert.Equal(@"shell:AppsFolder\discord", _client.Hashes["app:" + discord.Key]["target"]);
+        Assert.Equal("launch " + discord.Key, _client.Published.Last());
+
+        _client.Event("started " + discord.Key);
+        Assert.Equal(WebControlStyle.Pointer, seen.Last());
+    }
+
+    [Fact]
+    public void RecentRowCanShowAnAppFoundBySearch()
+    {
+        AppDefinition found = Installed[1];
+        _client.Lists["couch:recent"] = [found.Id];
+        _viewModel.SetInstalledApps(Installed);
+        _client.Connect();
+        Assert.Equal("Recently used", _viewModel.Rows[0].Title);
+        Assert.Equal("Discord", _viewModel.Rows[0].Tiles[0].Title);
+    }
+
+    [Theory]
+    [InlineData("Discord", "com.squirrel.Discord.Discord", true)]
+    [InlineData("Calculator", "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", true)]
+    [InlineData("Uninstall CMake", "Microsoft.AutoGenerated.{BF0E}", false)]
+    [InlineData("Python 3.13 Manuals (64-bit)", "C:\\Python313\\Doc\\index.html", false)]
+    [InlineData("Steam Support Center", "http://support.steampowered.com/", false)]
+    [InlineData("", "x", false)]
+    public void TheAppListLeavesOutThingsThatAreNotApps(string name, string path, bool expected)
+    {
+        Assert.Equal(expected, InstalledApps.IsLaunchable(name, path));
+    }
+
+    [Fact]
+    public void SearchPutsNamesStartingWithTheTextFirst()
+    {
+        var apps = new List<AppDefinition> { InstalledApps.ToApp("Audio Mixer", "a", null), InstalledApps.ToApp("Mixer", "b", null) };
+        Assert.Equal(["Mixer", "Audio Mixer"], InstalledApps.Search(apps, "mix").Select(app => app.Name));
+    }
+
+    [Fact]
+    public void AppIdsAreStableAndSafeForCouchd()
+    {
+        string id = InstalledApps.ToApp("A", @"C:\My Apps\a.exe", null).Id;
+        Assert.Equal(id, InstalledApps.ToApp("A", @"C:\My Apps\a.exe", null).Id);
+        Assert.Matches("^[a-z0-9_-]{1,64}$", id);
     }
 
     [Fact]
@@ -359,6 +598,205 @@ public class MainViewModelTests
         Assert.Equal(["Game", "Notes"], tiles.Select(tile => tile.Title));
         Assert.EndsWith("1 h 0 min", tiles[0].Subtitle);
         Assert.EndsWith("under a minute", tiles[1].Subtitle);
+    }
+
+    [Fact]
+    public void EmptyScreensExplainThemselves()
+    {
+        Assert.Equal("Connecting...", _viewModel.EmptyText);
+
+        _client.Connect();
+        Assert.Null(_viewModel.EmptyText);
+
+        Open("History");
+        Assert.Equal("Nothing played yet.", _viewModel.EmptyText);
+    }
+
+    [Fact]
+    public void AppScreenWithNothingInItSaysWhereToAddApps()
+    {
+        var viewModel = new MainViewModel(_client, [], _window);
+        _client.Connect();
+        Assert.Contains("apps.json", viewModel.EmptyText);
+    }
+
+    [Fact]
+    public void TilesWithoutArtworkShowTheirFirstLetter()
+    {
+        _client.Connect();
+        Assert.Equal("G", Tile("game").Monogram);
+        Assert.Equal("Steam game", Tile("game").Description);
+        Assert.Equal("Web app", Tile("video").Description);
+    }
+
+    [Fact]
+    public void KnownLogosAndCustomColoursReachTheTile()
+    {
+        var viewModel = new MainViewModel(_client,
+        [
+            new AppDefinition("yt", "YouTube", "watch", "web", "https://y.com", Logo: "youtube"),
+            new AppDefinition("mine", "Mine", "watch", "web", "https://m.com", Color: "#123456"),
+            new AppDefinition("art", "Art", "games", "steam", "1", Image: "a.jpg", Logo: "youtube", Backdrop: "b.jpg"),
+            new AppDefinition("web", "Web", "apps", "web", "https://w.com", Logo: "no-such-logo", Window: "browser"),
+        ], _window);
+        _client.Connect();
+        List<TileViewModel> tiles = viewModel.Rows[0].Tiles.ToList();
+
+        Assert.Equal(BrandLogos.Find("youtube")!.Path, tiles[0].LogoPath);
+        Assert.Null(tiles[0].Monogram);
+        Assert.Equal("#123456", tiles[1].Accent);
+        Assert.Equal("M", tiles[1].Monogram);
+        Assert.Null(tiles[2].LogoPath);  // real artwork wins over a logo
+        Assert.Equal("b.jpg", tiles[2].Backdrop);
+        Assert.Equal("W", tiles[3].Monogram);  // an unknown logo name falls back instead of failing
+        Assert.Equal("Web browser", tiles[3].Description);
+    }
+
+    [Fact]
+    public void WaitingForSteamHidesTheUiAndLetsTheControllerUseItsDialog()
+    {
+        var seen = new List<WebControlStyle?>();
+        _viewModel.WebControlChanged += style => seen.Add(style);
+        _client.Connect();
+
+        _client.Event("launching game");
+        Assert.True(_window.IsHidden);
+        Assert.Equal(WebControlStyle.WaitingForLaunch, seen.Last());
+
+        _client.Event("started game");
+        Assert.True(_window.IsHidden);
+        Assert.Null(seen.Last());  // the game reads the controller itself from here
+
+        _client.Event("exited game");
+        Assert.False(_window.IsHidden);
+        Assert.Equal("game", _focus.Last());
+    }
+
+    [Fact]
+    public void CancellingALaunchComesBackToTheSameTile()
+    {
+        var seen = new List<WebControlStyle?>();
+        _viewModel.WebControlChanged += style => seen.Add(style);
+        _client.Connect();
+        _client.Event("launching game");
+
+        _client.Event("launch_cancelled game");
+        Assert.False(_window.IsHidden);
+        Assert.Null(seen.Last());
+        Assert.Equal("game", _focus.Last());
+    }
+
+    [Fact]
+    public void LaunchThatTimesOutComesBackAndSaysWhy()
+    {
+        _client.Connect();
+        _client.Event("launching game");
+        _client.Event("launch_failed game It did not start in time.");
+        Assert.False(_window.IsHidden);
+        Assert.Equal("Unable to launch Game. It did not start in time.", _viewModel.Message);
+    }
+
+    [Fact]
+    public async Task PeriodicCheckLeavesAWaitingLaunchAlone()
+    {
+        _client.Connect();
+        _client.Strings["couch:alive"] = "1";
+        _client.Event("launching game");  // couch:running isn't set until the game starts
+
+        await _viewModel.CheckRunningAppAsync();
+        Assert.True(_window.IsHidden);
+    }
+
+    [Fact]
+    public void RefusedLaunchWhileAnotherRunsDoesNotDisturbIt()
+    {
+        var seen = new List<WebControlStyle?>();
+        _client.Connect();
+        _client.Event("started video");
+        _viewModel.WebControlChanged += style => seen.Add(style);
+
+        _client.Event("launch_failed notes Another app is already running.");
+        Assert.True(_window.IsHidden);
+        Assert.Empty(seen);
+    }
+
+    [Fact]
+    public void MovingOntoATabShowsItsContentWithoutMovingFocus()
+    {
+        _client.Connect();
+        _focus.Clear();
+
+        _viewModel.ShowScreen("Games");
+
+        Assert.Equal("Games", _viewModel.CurrentScreen);
+        Assert.Equal(["game"], _viewModel.Rows[0].Tiles.Select(tile => tile.Key));
+        Assert.True(_viewModel.Tabs.First(tab => tab.Name == "Games").IsCurrent);
+        Assert.Equal("Game", _viewModel.FocusedTile?.Title);
+        Assert.Empty(_focus);  // focus stays on the tab
+    }
+
+    [Fact]
+    public void SelectingATabThenMovesIntoIt()
+    {
+        _client.Connect();
+        _viewModel.ShowScreen("Games");
+        _focus.Clear();
+
+        Open("Games");
+        Assert.Equal([null], _focus);
+    }
+
+    [Fact]
+    public void PreviewFollowsFocusAndClearsOnAnEmptyScreen()
+    {
+        _client.Connect();
+        _viewModel.OnTileFocused(Tile("game"));
+        Assert.Equal("Game", _viewModel.FocusedTile?.Title);
+
+        Open("History");
+        Assert.Null(_viewModel.FocusedTile);
+    }
+
+    [Fact]
+    public void ControllerDrivesWebAppsButNeverGames()
+    {
+        var seen = new List<WebControlStyle?>();
+        _viewModel.WebControlChanged += style => seen.Add(style);
+        _client.Connect();
+
+        _client.Event("started video");
+        Assert.Equal(WebControlStyle.Pointer, seen.Last());
+        _client.Event("exited video");
+        Assert.Null(seen.Last());
+
+        _client.Event("started game");
+        Assert.Null(seen.Last());
+        _client.Event("exited game");
+        Assert.Null(seen.Last());
+    }
+
+    [Fact]
+    public async Task LosingTheAppAlsoHandsTheControllerBack()
+    {
+        var seen = new List<WebControlStyle?>();
+        _viewModel.WebControlChanged += style => seen.Add(style);
+        _client.Connect();
+        _client.Event("started video");
+        Assert.Equal(WebControlStyle.Pointer, seen.Last());
+
+        _client.Disconnect();
+        for (int i = 0; i < 3; i++) await _viewModel.CheckRunningAppAsync();
+        Assert.Null(seen.Last());
+    }
+
+    [Fact]
+    public void CloseAndVolumeGoToCouchd()
+    {
+        _client.Connect();
+        _viewModel.CloseRunningApp();
+        _viewModel.ChangeVolume(NavAction.VolumeUp);
+        _viewModel.ChangeVolume(NavAction.VolumeDown);
+        Assert.Equal(["close", "volume up", "volume down"], _client.Published);
     }
 
     [Fact]

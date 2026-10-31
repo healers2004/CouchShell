@@ -1,3 +1,9 @@
 <Application x:Class="CouchShell.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" />
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <!-- How long focus and fade animations take. App.xaml.cs sets it to zero if Windows has
+             animations turned off. -->
+        <Duration x:Key="MotionDuration">0:0:0.16</Duration>
+    </Application.Resources>
+</Application>

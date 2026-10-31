@@ -16,7 +16,7 @@ if ($Remove) {
 
 $script = Join-Path $PSScriptRoot 'start-couchshell.ps1'
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`""
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -AtLogon"
 $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited

@@ -25,12 +25,19 @@ public sealed class ControllerService : IDisposable
 
     public ControllerService(Dispatcher dispatcher) => _dispatcher = dispatcher;
 
+    // While set, the controller drives the web app instead of CouchShell's menus. volatile: it's
+    // set on the UI thread and read on the polling thread.
+    private volatile WebInputSession? _webSession;
+
+    public void SetWebSession(WebInputSession? session) => _webSession = session;
+
     public void Start() => _loop = Task.Run(() => PollLoopAsync(_stop.Token));
 
     private async Task PollLoopAsync(CancellationToken token)
     {
         var clock = Stopwatch.StartNew();
         int slot = -1;  // XInput slot of the controller in use, or -1 when none is connected
+        WebInputSession? runningSession = null;
 
         while (!token.IsCancellationRequested)
         {
@@ -40,13 +47,30 @@ public sealed class ControllerService : IDisposable
                 if (slot >= 0) Debug.WriteLine($"Controller connected in slot {slot}");
             }
 
+            WebInputSession? session = _webSession;
+            if (!ReferenceEquals(session, runningSession))
+            {
+                // Handing over: let go of anything the old session held, and don't let a button
+                // that's still down count as a new press.
+                runningSession?.Release();
+                runningSession = session;
+                _mapper.Reset();
+            }
+
             TimeSpan delay;
             if (slot >= 0 && WindowsNative.TryGetGamepad(slot, out var pad))
             {
-                foreach (NavAction action in _mapper.Update(pad.Buttons, pad.ThumbLX, pad.ThumbLY, clock.Elapsed))
+                if (session != null)
                 {
-                    // Queue it for the UI thread without waiting (`_ =` discards the result).
-                    _ = _dispatcher.InvokeAsync(() => ActionPressed?.Invoke(action));
+                    session.Update(pad, clock.Elapsed);
+                }
+                else
+                {
+                    foreach (NavAction action in _mapper.Update(pad.Buttons, pad.ThumbLX, pad.ThumbLY, clock.Elapsed))
+                    {
+                        // Queue it for the UI thread without waiting (`_ =` discards the result).
+                        _ = _dispatcher.InvokeAsync(() => ActionPressed?.Invoke(action));
+                    }
                 }
                 delay = PollInterval;
             }
@@ -55,6 +79,7 @@ public sealed class ControllerService : IDisposable
                 if (slot >= 0) Debug.WriteLine("Controller disconnected");
                 slot = -1;
                 _mapper.Reset();  // nothing stays "held" across a disconnect
+                session?.Release();
                 delay = ScanInterval;
             }
 

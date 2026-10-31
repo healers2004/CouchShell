@@ -5,14 +5,37 @@
       "name": "YouTube",
       "category": "watch",
       "type": "web",
-      "target": "https://www.youtube.com/tv"
+      "target": "https://www.youtube.com/tv",
+      "controller": "keys",
+      "userAgent": "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Version/6.0 TV Safari/537.36",
+      "logo": "youtube"
     },
     {
       "id": "netflix",
       "name": "Netflix",
       "category": "watch",
       "type": "web",
-      "target": "https://www.netflix.com"
+      "target": "https://www.netflix.com",
+      "logo": "netflix"
+    },
+    {
+      "id": "browser",
+      "name": "Browser",
+      "category": "apps",
+      "type": "web",
+      "target": "https://www.google.com",
+      "window": "browser",
+      "logo": "chrome"
+    },
+    {
+      "id": "spotify",
+      "name": "Spotify",
+      "category": "apps",
+      "type": "shell",
+      "target": "shell:AppsFolder\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify",
+      "controller": "pointer",
+      "requires": "%LOCALAPPDATA%\\Microsoft\\WindowsApps\\Spotify.exe",
+      "logo": "spotify"
     },
     {
       "id": "moonlight",
@@ -20,21 +43,6 @@
       "category": "games",
       "type": "exe",
       "target": "%ProgramFiles%\\Moonlight Game Streaming\\Moonlight.exe"
-    },
-    {
-      "id": "steam-example",
-      "name": "Team Fortress 2",
-      "category": "games",
-      "type": "steam",
-      "target": "440",
-      "processName": "tf_win64.exe"
-    },
-    {
-      "id": "command-prompt",
-      "name": "Command Prompt",
-      "category": "apps",
-      "type": "exe",
-      "target": "%SystemRoot%\\System32\\cmd.exe"
     }
   ]
 }
