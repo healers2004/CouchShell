@@ -62,16 +62,18 @@ If Steam shows something before a game starts, such as a launch options dialog, 
 Create `%LOCALAPPDATA%\CouchShell\apps.json`. Your entries appear first, and reusing a built-in `id` replaces that app. Changes apply the next time CouchShell starts. A malformed entry is logged and skipped.
 
 ```json
-[
-  {
-    "id": "plex",
-    "name": "Plex",
-    "category": "watch",
-    "type": "web",
-    "target": "https://app.plex.tv",
-    "color": "#1F2326"
-  }
-]
+{
+  "apps": [
+    {
+      "id": "plex",
+      "name": "Plex",
+      "category": "watch",
+      "type": "web",
+      "target": "https://app.plex.tv",
+      "color": "#1F2326"
+    }
+  ]
+}
 ```
 
 | Field | Meaning |
