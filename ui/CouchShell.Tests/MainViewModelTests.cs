@@ -523,6 +523,23 @@ public class MainViewModelTests
     }
 
     [Fact]
+    public void ExitNeedsConfirmationAndSendsNoPowerRequest()
+    {
+        int exits = 0;
+        _viewModel.ExitRequested += () => exits++;
+        _client.Connect();
+        Open("Settings");
+
+        Tile("power:exit").Command.Execute(null);
+        Assert.True(_viewModel.IsConfirmOpen);
+        Assert.Equal(0, exits);
+
+        _viewModel.ConfirmYesCommand.Execute(null);
+        Assert.Equal(1, exits);
+        Assert.DoesNotContain(_client.Published, request => request.StartsWith("power"));
+    }
+
+    [Fact]
     public void PowerActionNeedsConfirmationAndStartsOnNo()
     {
         _client.Connect();

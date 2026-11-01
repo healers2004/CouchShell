@@ -43,6 +43,7 @@ public static class InstalledApps
     public static bool IsLaunchable(string name, string path)
     {
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(path)) return false;
+        if (name.Equals("CouchShell", StringComparison.OrdinalIgnoreCase)) return false;  // already open
         if (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return false;
         if (NotAppEndings.Any(ending => path.EndsWith(ending, StringComparison.OrdinalIgnoreCase))) return false;
         return !NotAppWords.Any(word => name.Contains(word, StringComparison.OrdinalIgnoreCase));

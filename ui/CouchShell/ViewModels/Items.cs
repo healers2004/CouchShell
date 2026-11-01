@@ -13,7 +13,8 @@ public static class Glyphs
     public const string Sleep = "";
     public const string Restart = "";
     public const string Power = "";
-    public const string Sounds = "";
+    public const string Exit = "";
+    public const string Sounds ="";
     public const string Pointer = "";
     public const string Slower = "";
     public const string Faster = "";

@@ -147,6 +147,9 @@ public class MainViewModel : ViewModelBase
     // Asks the view to focus a tile by key. Null means the first tile on the screen.
     public event Action<string?>? FocusRequested;
 
+    // The user chose to exit. The app owns its own lifetime, so it does the closing.
+    public event Action? ExitRequested;
+
     // What the preview area describes. Tracks focus, which only the view knows about.
     public TileViewModel? FocusedTile
     {
@@ -713,6 +716,11 @@ public class MainViewModel : ViewModelBase
         ]));
         Rows.Add(new TileRow("Power",
         [
+            ConfirmTile("exit", "Exit CouchShell", "Exit CouchShell and go back to Windows?", Glyphs.Exit, () =>
+            {
+                ExitRequested?.Invoke();
+                return Task.CompletedTask;
+            }),
             PowerTile("sleep", "Sleep", "Put the PC to sleep?", Glyphs.Sleep),
             PowerTile("restart", "Restart", "Restart the PC?", Glyphs.Restart),
             PowerTile("shutdown", "Shut down", "Shut down the PC?", Glyphs.Power),
@@ -724,12 +732,15 @@ public class MainViewModel : ViewModelBase
             new RelayCommand(_ => Guard(() => SetBrowserAsync(id))), Glyphs.Globe,
             Description: "The browser that web apps open in");
 
-    private TileViewModel PowerTile(string action, string name, string question, string glyph)
+    private TileViewModel PowerTile(string action, string name, string question, string glyph) =>
+        ConfirmTile(action, name, question, glyph, () => RequestAsync("power " + action));
+
+    private TileViewModel ConfirmTile(string action, string name, string question, string glyph, Func<Task> confirmed)
     {
         string key = "power:" + action;
         return new TileViewModel(key, name, null, null, new RelayCommand(_ =>
         {
-            _confirmAction = () => RequestAsync("power " + action);
+            _confirmAction = confirmed;
             _confirmReturnKey = key;
             ConfirmText = question;
             FocusRequested?.Invoke("confirm:no");  // the safe answer starts focused
