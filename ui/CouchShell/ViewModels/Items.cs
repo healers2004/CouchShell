@@ -35,7 +35,9 @@ public sealed record TileViewModel(
     string? Backdrop = null,
     string? Description = null,
     string? ActionLabel = null,
-    string? IconPath = null)
+    string? IconPath = null,
+    string? TitleImage = null,
+    bool IsWide = false)  // the first tile on Home: twice as wide, showing the game's artwork
 {
     public string? Monogram =>
         Image == null && LogoPath == null && Glyph == null && IconPath == null && Title.Length > 0 ? Title[..1].ToUpperInvariant() : null;
@@ -44,7 +46,32 @@ public sealed record TileViewModel(
 // One key of the Search screen's keyboard.
 public sealed record SearchKey(string Label, string FocusKey, ICommand Command, double Width = 88);
 
-public sealed record TileRow(string Title, IReadOnlyList<TileViewModel> Tiles);
+public sealed record TileRow(string Title, IReadOnlyList<TileViewModel> Tiles)
+{
+    public string FocusKey => "section:" + Title;
+    public int Count => Tiles.Count;
+}
+
+// One line of the Start menu. Value is shown on the right, or as a slider for the volume. Group,
+// when set, is a heading shown above it. Value changes in place, so focus stays on the line.
+public sealed class GuideItem(string key, string label, string glyph, ICommand command, bool isSlider = false, string? group = null)
+    : ViewModelBase
+{
+    private string? _value;
+
+    public string Key { get; } = key;
+    public string Label { get; } = label;
+    public string Glyph { get; } = glyph;
+    public ICommand Command { get; } = command;
+    public bool IsSlider { get; } = isSlider;
+    public string? Group { get; } = group;
+
+    public string? Value
+    {
+        get => _value;
+        set => Set(ref _value, value);
+    }
+}
 
 public sealed class TabViewModel(string name, ICommand command) : ViewModelBase
 {

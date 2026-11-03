@@ -4,14 +4,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:CouchShell.Views"
         xmlns:vm="clr-namespace:CouchShell.ViewModels"
+        x:Name="Root"
         Title="CouchShell"
         Icon="/Assets/app.ico"
         WindowStyle="None"
         ResizeMode="NoResize"
         WindowState="Maximized"
         FontFamily="Segoe UI Variable Display, Segoe UI"
-        Background="#0B0D12"
-        Foreground="#F4F5F8">
+        Background="#0D0E11"
+        Foreground="#F2F3F5">
 
     <!-- Arrow keys are handled in code, on the same path as the controller. Enter is handled by the
          focused button itself. These work wherever focus is. -->
@@ -20,42 +21,45 @@
         <KeyBinding Key="OemMinus" Command="{Binding VolumeDownCommand}" />
         <KeyBinding Key="OemPlus" Command="{Binding VolumeUpCommand}" />
         <KeyBinding Key="M" Command="{Binding MuteCommand}" />
+        <KeyBinding Key="G" Command="{Binding GuideCommand}" />
+        <KeyBinding Key="Apps" Command="{Binding GuideCommand}" />
     </Window.InputBindings>
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
+        <views:CollapsedWhenTrueConverter x:Key="CollapsedWhenTrue" />
         <views:InverseBooleanConverter x:Key="Inverse" />
         <views:NullToCollapsedConverter x:Key="CollapsedWhenNull" />
+        <views:EqualsConverter x:Key="AreEqual" />
 
-        <!-- Colours. Everything below uses these, so the look can change in one place. -->
-        <SolidColorBrush x:Key="MutedTextBrush" Color="#A6ABBA" />
-        <SolidColorBrush x:Key="SurfaceBrush" Color="#191C24" />
-        <SolidColorBrush x:Key="SubtleSurfaceBrush" Color="#2A2E3A" />
-        <SolidColorBrush x:Key="HairlineBrush" Color="#33FFFFFF" />
+        <!-- Colours. Charcoal, white and grey, with one accent: green, for what's selected or active. -->
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#A4A9B3" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#17191D" />
+        <SolidColorBrush x:Key="RaisedBrush" Color="#1F2228" />
+        <SolidColorBrush x:Key="SubtleSurfaceBrush" Color="#262930" />
+        <SolidColorBrush x:Key="HairlineBrush" Color="#30333B" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#107C10" />
+        <SolidColorBrush x:Key="AccentBrightBrush" Color="#3DBA3D" />
         <SolidColorBrush x:Key="WarningBrush" Color="#FFC86B" />
-        <Color x:Key="BackgroundColor">#0B0D12</Color>
-        <Color x:Key="BackgroundClearColor">#000B0D12</Color>
+        <SolidColorBrush x:Key="FocusTextBrush" Color="#0D0E11" />
+        <Color x:Key="BackgroundColor">#0D0E11</Color>
+        <Color x:Key="BackgroundSoftColor">#B30D0E11</Color>
+        <Color x:Key="BackgroundClearColor">#000D0E11</Color>
         <FontFamily x:Key="IconFont">Segoe MDL2 Assets</FontFamily>
 
         <!-- The same shapes as tools/make-icon.ps1. -->
         <ControlTemplate x:Key="Logo">
             <Viewbox>
-                        <Canvas Width="256" Height="256">
-                            <Rectangle Width="256" Height="256" RadiusX="56" RadiusY="56">
-                                <Rectangle.Fill>
-                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                        <GradientStop Color="#6D7CFF" Offset="0" />
-                                        <GradientStop Color="#3A2BB8" Offset="1" />
-                                    </LinearGradientBrush>
-                                </Rectangle.Fill>
-                            </Rectangle>
-                            <Rectangle Canvas.Left="66" Canvas.Top="70" Width="124" Height="72" RadiusX="20" RadiusY="20" Fill="#C9D0FF" />
-                            <Rectangle Canvas.Left="72" Canvas.Top="130" Width="112" Height="48" RadiusX="10" RadiusY="10" Fill="White" />
-                            <Rectangle Canvas.Left="38" Canvas.Top="112" Width="46" Height="72" RadiusX="20" RadiusY="20" Fill="White" />
-                            <Rectangle Canvas.Left="172" Canvas.Top="112" Width="46" Height="72" RadiusX="20" RadiusY="20" Fill="White" />
-                            <Rectangle Canvas.Left="60" Canvas.Top="184" Width="18" Height="20" RadiusX="4" RadiusY="4" Fill="White" />
-                            <Rectangle Canvas.Left="178" Canvas.Top="184" Width="18" Height="20" RadiusX="4" RadiusY="4" Fill="White" />
-                        </Canvas>
+                <Canvas Width="256" Height="256">
+                    <Rectangle Width="256" Height="256" RadiusX="56" RadiusY="56" Fill="#15171C" />
+                    <Rectangle Canvas.Left="46" Canvas.Top="58" Width="164" Height="114" RadiusX="20" RadiusY="20" Stroke="White" StrokeThickness="14" />
+                    <Path Data="M100,200 H156" Stroke="White" StrokeThickness="14" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                    <Path Fill="#3DBA3D" Data="M100,98 H156 A26,26 0 0 1 181,131 L176,146 A11,11 0 0 1 157,149 L150,139 H106 L99,149 A11,11 0 0 1 80,146 L75,131 A26,26 0 0 1 100,98 Z" />
+                    <Rectangle Canvas.Left="92" Canvas.Top="114" Width="6" Height="18" RadiusX="2" RadiusY="2" Fill="#15171C" />
+                    <Rectangle Canvas.Left="86" Canvas.Top="120" Width="18" Height="6" RadiusX="2" RadiusY="2" Fill="#15171C" />
+                    <Ellipse Canvas.Left="155.5" Canvas.Top="111.5" Width="9" Height="9" Fill="#15171C" />
+                    <Ellipse Canvas.Left="165.5" Canvas.Top="121.5" Width="9" Height="9" Fill="#15171C" />
+                </Canvas>
             </Viewbox>
         </ControlTemplate>
 
@@ -64,22 +68,52 @@
             <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="{StaticResource MotionDuration}" />
         </Storyboard>
 
-        <!-- A tab or dialog button. Focus is solid white, readable from across the room. -->
-        <Style x:Key="PillButton" TargetType="Button">
+        <!-- A tab: plain text. The open screen's tab is underlined in green; focus is solid white,
+             readable from across the room. -->
+        <Style x:Key="TabButton" TargetType="Button">
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+            <Setter Property="Foreground" Value="#C3C7CF" />
             <Setter Property="FontSize" Value="28" />
-            <Setter Property="Padding" Value="24,10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="18,8" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Pill" Background="Transparent" CornerRadius="26" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="Back" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
+                            <!-- On the border, not the button: the open tab sets the button's own
+                                 Foreground, which would win over a trigger here. -->
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Pill" Property="Background" Value="White" />
-                                <Setter Property="Foreground" Value="#0B0D12" />
+                                <Setter TargetName="Back" Property="Background" Value="White" />
+                                <Setter TargetName="Back" Property="TextElement.Foreground" Value="{StaticResource FocusTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Yes and No in the confirmation dialog. -->
+        <Style x:Key="DialogButton" TargetType="Button">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Foreground" Value="#F2F3F5" />
+            <Setter Property="FontSize" Value="30" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Width" Value="240" />
+            <Setter Property="Height" Value="76" />
+            <Setter Property="Margin" Value="10,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Back" Background="{StaticResource SubtleSurfaceBrush}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="White" />
+                                <Setter Property="Foreground" Value="{StaticResource FocusTextBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -90,7 +124,7 @@
         <!-- A key on the Search screen's keyboard. -->
         <Style x:Key="KeyButton" TargetType="Button">
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Foreground" Value="#F4F5F8" />
+            <Setter Property="Foreground" Value="#F2F3F5" />
             <Setter Property="FontSize" Value="26" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Height" Value="56" />
@@ -98,13 +132,13 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Key" Background="#CC2A2E3A" CornerRadius="10">
+                        <Border x:Name="Key" Background="#E6262930" CornerRadius="4">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocused" Value="True">
                                 <Setter TargetName="Key" Property="Background" Value="White" />
-                                <Setter Property="Foreground" Value="#0B0D12" />
+                                <Setter Property="Foreground" Value="{StaticResource FocusTextBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -112,49 +146,47 @@
             </Setter>
         </Style>
 
-        <!-- A tile: picture on top, title underneath. On focus the picture grows and gains a white
-             ring, and the title brightens. -->
+        <!-- A tile: picture on top, title underneath. On focus the picture grows a little and gains
+             a thick white outline, and the title brightens. The first tile on Home is twice as wide. -->
         <Style x:Key="TileButton" TargetType="Button">
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-            <Setter Property="Margin" Value="0,0,28,0" />
+            <Setter Property="Margin" Value="0,0,24,0" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <StackPanel Width="360">
-                            <Border x:Name="Card" Height="202" CornerRadius="14" Background="{Binding Accent}"
-                                    BorderThickness="4" BorderBrush="Transparent" RenderTransformOrigin="0.5,0.5">
+                        <StackPanel x:Name="Frame" Width="360">
+                            <Border x:Name="Card" Height="202" CornerRadius="4" Background="{Binding Accent}"
+                                    BorderThickness="5" BorderBrush="Transparent" RenderTransformOrigin="0.5,0.5">
                                 <Border.RenderTransform>
                                     <ScaleTransform x:Name="Scale" />
                                 </Border.RenderTransform>
                                 <ContentPresenter />
                             </Border>
-                            <TextBlock x:Name="Caption" Text="{Binding Title}" FontSize="26" Margin="4,16,4,0"
+                            <TextBlock x:Name="Caption" Text="{Binding Title}" FontSize="24" Margin="2,14,2,0"
                                        Foreground="{StaticResource MutedTextBrush}" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Text="{Binding Subtitle}" FontSize="21" Margin="4,2,4,0" Foreground="{StaticResource MutedTextBrush}"
+                            <TextBlock Text="{Binding Subtitle}" FontSize="20" Margin="2,2,2,0" Foreground="{StaticResource MutedTextBrush}"
                                        TextTrimming="CharacterEllipsis"
                                        Visibility="{Binding Subtitle, Converter={StaticResource CollapsedWhenNull}}" />
                         </StackPanel>
                         <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsWide}" Value="True">
+                                <Setter TargetName="Frame" Property="Width" Value="744" />
+                            </DataTrigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
                                 <Setter TargetName="Card" Property="BorderBrush" Value="White" />
-                                <Setter TargetName="Card" Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect Color="#A8C4FF" BlurRadius="44" ShadowDepth="0" Opacity="0.75" />
-                                    </Setter.Value>
-                                </Setter>
                                 <Setter TargetName="Caption" Property="Foreground" Value="White" />
                                 <Setter TargetName="Caption" Property="FontWeight" Value="SemiBold" />
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleX" To="1.07" Duration="{StaticResource MotionDuration}">
+                                            <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleX" To="1.05" Duration="{StaticResource MotionDuration}">
                                                 <DoubleAnimation.EasingFunction>
-                                                    <BackEase EasingMode="EaseOut" Amplitude="0.6" />
+                                                    <CubicEase EasingMode="EaseOut" />
                                                 </DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
-                                            <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleY" To="1.07" Duration="{StaticResource MotionDuration}">
+                                            <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleY" To="1.05" Duration="{StaticResource MotionDuration}">
                                                 <DoubleAnimation.EasingFunction>
-                                                    <BackEase EasingMode="EaseOut" Amplitude="0.6" />
+                                                    <CubicEase EasingMode="EaseOut" />
                                                 </DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
                                         </Storyboard>
@@ -175,43 +207,177 @@
             </Setter>
         </Style>
 
-        <!-- Button hints along the bottom. -->
+        <!-- What a tile shows: the first of its artwork, icon, brand logo, glyph or first letter. -->
+        <DataTemplate x:Key="TileContent">
+            <Button Tag="{Binding Key}" Command="{Binding Command}" Style="{StaticResource TileButton}"
+                    AutomationProperties.Name="{Binding Title}">
+                <Grid ClipToBounds="True">
+                    <Image Source="{Binding Image, TargetNullValue={x:Null}}" Stretch="UniformToFill"
+                           Visibility="{Binding Image, Converter={StaticResource CollapsedWhenNull}}" />
+                    <Image Source="{Binding IconPath, TargetNullValue={x:Null}}" Width="104" Height="104"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="{Binding IconPath, Converter={StaticResource CollapsedWhenNull}}" />
+                    <Path Data="{Binding LogoPath}" Fill="{Binding LogoColor}" Stretch="Uniform" Width="96" Height="96"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Visibility="{Binding LogoPath, Converter={StaticResource CollapsedWhenNull}}" />
+                    <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="60" Foreground="White"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding Glyph, Converter={StaticResource CollapsedWhenNull}}" />
+                    <TextBlock Text="{Binding Monogram}" FontSize="88" FontWeight="SemiBold" Foreground="White"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding Monogram, Converter={StaticResource CollapsedWhenNull}}" />
+                </Grid>
+            </Button>
+        </DataTemplate>
+
+        <!-- A section in the list on the left of Games and Settings. The one showing has a green bar. -->
+        <Style x:Key="SectionButton" TargetType="Button">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Foreground" Value="#C3C7CF" />
+            <Setter Property="FontSize" Value="26" />
+            <Setter Property="Height" Value="68" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Back" Background="Transparent" CornerRadius="4">
+                            <Grid>
+                                <Rectangle x:Name="Bar" Width="5" RadiusX="2.5" RadiusY="2.5" Margin="0,16" HorizontalAlignment="Left"
+                                           Fill="{StaticResource AccentBrightBrush}" Visibility="Hidden" />
+                                <ContentPresenter Margin="28,0,22,0" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Value="True">
+                                <DataTrigger.Binding>
+                                    <MultiBinding Converter="{StaticResource AreEqual}">
+                                        <Binding Path="Title" />
+                                        <Binding Path="DataContext.SelectedSection" ElementName="Root" />
+                                    </MultiBinding>
+                                </DataTrigger.Binding>
+                                <Setter TargetName="Back" Property="Background" Value="{StaticResource RaisedBrush}" />
+                                <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="White" />
+                            </DataTrigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="White" />
+                                <Setter Property="Foreground" Value="{StaticResource FocusTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- One setting in the Settings pane: name and explanation, its value on the right. -->
+        <Style x:Key="OptionButton" TargetType="Button">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Foreground" Value="#F2F3F5" />
+            <Setter Property="Margin" Value="5,5,5,8" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Back" Background="{StaticResource SurfaceBrush}" CornerRadius="4" MinHeight="96" Padding="30,14"
+                                BorderThickness="5" BorderBrush="Transparent">
+                            <DockPanel>
+                                <Border x:Name="Value" DockPanel.Dock="Right" VerticalAlignment="Center" CornerRadius="4" Padding="16,6"
+                                        Background="Transparent" Visibility="{Binding Subtitle, Converter={StaticResource CollapsedWhenNull}}">
+                                    <TextBlock x:Name="ValueText" Text="{Binding Subtitle}" FontSize="23" Foreground="#D5D8DE" />
+                                </Border>
+                                <TextBlock DockPanel.Dock="Left" Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="28"
+                                           VerticalAlignment="Center" Margin="0,0,24,0" Foreground="#C3C7CF"
+                                           Visibility="{Binding Glyph, Converter={StaticResource CollapsedWhenNull}}" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Title}" FontSize="26" />
+                                    <TextBlock Text="{Binding Description}" FontSize="20" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"
+                                               Visibility="{Binding Description, Converter={StaticResource CollapsedWhenNull}}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding Subtitle}" Value="Selected">
+                                <Setter TargetName="Value" Property="Background" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="ValueText" Property="Foreground" Value="White" />
+                            </DataTrigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Back" Property="BorderBrush" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- A line in the Start menu. -->
+        <Style x:Key="GuideButton" TargetType="Button">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Foreground" Value="#E6E8EC" />
+            <Setter Property="FontSize" Value="26" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Back" Background="Transparent" Height="76" Padding="52,0">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="26"
+                                           VerticalAlignment="Center" Width="50" />
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontSize="23" VerticalAlignment="Center" Margin="18,0,0,0"
+                                           Opacity="0.75" Visibility="{Binding Value, Converter={StaticResource CollapsedWhenNull}}" />
+                                <ProgressBar DockPanel.Dock="Right" Width="200" Height="8" VerticalAlignment="Center" Minimum="0" Maximum="100"
+                                             Value="{Binding DataContext.VolumePercent, ElementName=Root, Mode=OneWay}" BorderThickness="0"
+                                             Foreground="{StaticResource AccentBrush}" Background="#4DFFFFFF"
+                                             Visibility="{Binding IsSlider, Converter={StaticResource VisibleWhenTrue}}" />
+                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="#F2F3F5" />
+                                <Setter Property="Foreground" Value="{StaticResource FocusTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The screen behind the menu and dialogs fades back. Fading the screen itself, rather than
+             laying a dark sheet over it, keeps bright artwork from speckling through. -->
+        <Style x:Key="FadesBehindMenus" TargetType="FrameworkElement">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsBackgroundEnabled}" Value="False">
+                    <Setter Property="Opacity" Value="0.3" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Button hints along the bottom, in the controller's own button colours. -->
         <Style x:Key="HintBadge" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource SubtleSurfaceBrush}" />
+            <Setter Property="Background" Value="#D5D8DE" />
             <Setter Property="CornerRadius" Value="15" />
             <Setter Property="MinWidth" Value="30" />
             <Setter Property="Height" Value="30" />
-            <Setter Property="Padding" Value="8,0" />
-            <Setter Property="Margin" Value="28,0,10,0" />
+            <Setter Property="Padding" Value="7,0" />
+            <Setter Property="Margin" Value="30,0,10,0" />
         </Style>
         <Style x:Key="HintBadgeText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="18" />
-            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#111214" />
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
         <Style x:Key="HintLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="22" />
-            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+            <Setter Property="Foreground" Value="#D5D8DE" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
     </Window.Resources>
 
     <Grid>
-        <!-- The focused tile's own colour, as a soft glow from the top right. -->
-        <Rectangle Fill="{Binding FocusedTile.Accent}" Opacity="0.55">
-            <Rectangle.OpacityMask>
-                <RadialGradientBrush Center="0.85,0" GradientOrigin="0.85,0" RadiusX="0.8" RadiusY="0.9">
-                    <GradientStop Color="#FF000000" Offset="0" />
-                    <GradientStop Color="#00000000" Offset="1" />
-                </RadialGradientBrush>
-            </Rectangle.OpacityMask>
-        </Rectangle>
-
-        <!-- The focused game's artwork fills the top of the screen, fading into the background so
-             text stays readable over any picture. -->
-        <Grid VerticalAlignment="Top">
-            <Image Stretch="UniformToFill" Height="760" VerticalAlignment="Top" Opacity="0.75"
+        <!-- The focused tile's artwork fills the screen, darkened on the left and at the bottom so
+             text stays readable over any picture. Games and Settings have a plain background. -->
+        <Grid Visibility="{Binding IsSectionScreen, Converter={StaticResource CollapsedWhenTrue}}" Style="{StaticResource FadesBehindMenus}">
+            <Image Stretch="UniformToFill" VerticalAlignment="Top"
                    Source="{Binding FocusedTile.Backdrop, TargetNullValue={x:Null}, NotifyOnTargetUpdated=True}">
                 <Image.Triggers>
                     <EventTrigger RoutedEvent="Binding.TargetUpdated">
@@ -219,20 +385,24 @@
                     </EventTrigger>
                 </Image.Triggers>
             </Image>
-            <Rectangle Height="760" VerticalAlignment="Top">
+            <Rectangle>
                 <Rectangle.Fill>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                        <GradientStop Color="{StaticResource BackgroundColor}" Offset="0" />
-                        <GradientStop Color="{StaticResource BackgroundClearColor}" Offset="0.7" />
+                        <GradientStop Color="#F00D0E11" Offset="0" />
+                        <GradientStop Color="{StaticResource BackgroundSoftColor}" Offset="0.34" />
+                        <GradientStop Color="#1A0D0E11" Offset="0.7" />
+                        <GradientStop Color="{StaticResource BackgroundClearColor}" Offset="1" />
                     </LinearGradientBrush>
                 </Rectangle.Fill>
             </Rectangle>
-            <Rectangle Height="760" VerticalAlignment="Top">
+            <Rectangle>
                 <Rectangle.Fill>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                        <GradientStop Color="#990B0D12" Offset="0" />
-                        <GradientStop Color="{StaticResource BackgroundClearColor}" Offset="0.3" />
-                        <GradientStop Color="{StaticResource BackgroundColor}" Offset="1" />
+                        <GradientStop Color="#800D0E11" Offset="0" />
+                        <GradientStop Color="{StaticResource BackgroundClearColor}" Offset="0.22" />
+                        <GradientStop Color="{StaticResource BackgroundClearColor}" Offset="0.4" />
+                        <GradientStop Color="{StaticResource BackgroundSoftColor}" Offset="0.62" />
+                        <GradientStop Color="{StaticResource BackgroundColor}" Offset="0.85" />
                     </LinearGradientBrush>
                 </Rectangle.Fill>
             </Rectangle>
@@ -240,51 +410,27 @@
 
         <!-- Layout is designed on a fixed 1920x1080 canvas; Viewbox scales it to fit
              any resolution (1080p, 4K) and any Windows scaling setting. -->
-        <Viewbox Stretch="Uniform">
+        <Viewbox Stretch="Uniform" Style="{StaticResource FadesBehindMenus}">
             <Grid Width="1920" Height="1080">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="214" />
+                    <RowDefinition Height="400" />
                     <RowDefinition />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <!-- Header: logo, tabs, then clock and connection status. Disabled behind the confirm
-                     dialog, so focus can't leave it. -->
-                <DockPanel Margin="64,36,64,0" IsEnabled="{Binding IsConfirmOpen, Converter={StaticResource Inverse}}">
-                    <Control DockPanel.Dock="Left" Template="{StaticResource Logo}" Width="48" Height="48" Margin="0,0,28,0" VerticalAlignment="Center" Focusable="False" />
+                <!-- Header: logo, tabs, then the clock. Connection trouble shows only when there is
+                     some. Disabled behind the menu and dialogs, so focus can't leave them. -->
+                <DockPanel Margin="78,40,96,0" IsEnabled="{Binding IsBackgroundEnabled}">
+                    <Control DockPanel.Dock="Left" Template="{StaticResource Logo}" Width="46" Height="46" Margin="18,0,22,0" VerticalAlignment="Center" Focusable="False" />
 
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Ellipse Width="12" Height="12" Margin="0,0,10,0" VerticalAlignment="Center">
-                            <Ellipse.Style>
-                                <Style TargetType="Ellipse">
-                                    <Setter Property="Fill" Value="#FF7B7B" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsConnected}" Value="True">
-                                            <Setter Property="Fill" Value="#4CD9A0" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Ellipse.Style>
-                        </Ellipse>
-                        <TextBlock FontSize="22" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,28,0">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="Disconnected" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsConnected}" Value="True">
-                                            <Setter Property="Text" Value="Connected" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        <TextBlock x:Name="Clock" FontSize="30" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Text="Not connected" FontSize="22" Foreground="{StaticResource WarningBrush}" VerticalAlignment="Center" Margin="0,0,28,0"
+                                   Visibility="{Binding IsConnected, Converter={StaticResource CollapsedWhenTrue}}" />
+                        <TextBlock x:Name="Clock" FontSize="28" VerticalAlignment="Center" />
                     </StackPanel>
 
-                    <Border HorizontalAlignment="Left" VerticalAlignment="Center" Background="#59000000" CornerRadius="34" Padding="8,6,8,0"
-                            BorderBrush="#1FFFFFFF" BorderThickness="1">
                     <ItemsControl ItemsSource="{Binding Tabs}" Focusable="False" VerticalAlignment="Center">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -293,59 +439,69 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="0,0,4,0">
+                                <Grid Margin="0,0,6,0">
                                     <Button x:Name="Tab" Tag="{Binding FocusKey}" Command="{Binding Command}" Content="{Binding Name}"
-                                            Style="{StaticResource PillButton}" AutomationProperties.Name="{Binding Name}" />
+                                            Style="{StaticResource TabButton}" AutomationProperties.Name="{Binding Name}" />
                                     <!-- Marks the open screen's tab by more than colour alone. -->
-                                    <Rectangle x:Name="CurrentBar" Height="4" Width="36" RadiusX="2" RadiusY="2" Margin="0,5,0,0"
-                                               Fill="White" Visibility="Hidden" />
-                                </StackPanel>
+                                    <Rectangle x:Name="CurrentBar" Height="4" RadiusX="2" RadiusY="2" Margin="18,0,18,-10" VerticalAlignment="Bottom"
+                                               Fill="{StaticResource AccentBrightBrush}" Visibility="Hidden" />
+                                </Grid>
                                 <DataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding IsCurrent}" Value="True">
                                         <Setter TargetName="CurrentBar" Property="Visibility" Value="Visible" />
-                                        <Setter TargetName="Tab" Property="FontWeight" Value="SemiBold" />
+                                        <Setter TargetName="Tab" Property="Foreground" Value="White" />
                                     </DataTrigger>
                                 </DataTemplate.Triggers>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    </Border>
                 </DockPanel>
 
-                <!-- Preview: what the focused tile is. -->
-                <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="68,0,64,22">
-                    <TextBlock Text="{Binding FocusedTile.Title, NotifyOnTargetUpdated=True}" FontSize="68" FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
-                        <TextBlock.RenderTransform>
-                            <TranslateTransform />
-                        </TextBlock.RenderTransform>
-                        <TextBlock.Effect>
-                            <DropShadowEffect Color="Black" BlurRadius="24" ShadowDepth="0" Opacity="0.8" />
-                        </TextBlock.Effect>
-                        <TextBlock.Triggers>
-                            <EventTrigger RoutedEvent="Binding.TargetUpdated">
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="{StaticResource MotionDuration}" />
-                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="-24" To="0" Duration="{StaticResource MotionDuration}" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </EventTrigger>
-                        </TextBlock.Triggers>
-                    </TextBlock>
-                    <StackPanel Orientation="Horizontal" Margin="2,6,0,0">
-                        <Border Background="#F2FFFFFF" CornerRadius="16" Padding="16,3" Margin="0,0,16,0" VerticalAlignment="Center"
-                                Visibility="{Binding FocusedTile.ActionLabel, Converter={StaticResource CollapsedWhenNull}}">
-                            <TextBlock Text="{Binding FocusedTile.ActionLabel}" FontSize="22" FontWeight="SemiBold" Foreground="#0B0D12" />
-                        </Border>
-                        <TextBlock Text="{Binding FocusedTile.Description}" FontSize="26" Foreground="#D5D8E2" VerticalAlignment="Center" />
-                    </StackPanel>
+                <!-- Preview: what the focused tile is. A game's own logo when it has one, otherwise its name. -->
+                <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="96,0,96,30"
+                            Visibility="{Binding IsSectionScreen, Converter={StaticResource CollapsedWhenTrue}}">
+                    <Grid HorizontalAlignment="Left">
+                        <Image Source="{Binding FocusedTile.TitleImage, TargetNullValue={x:Null}, NotifyOnTargetUpdated=True}"
+                               MaxWidth="560" MaxHeight="190" Stretch="Uniform" HorizontalAlignment="Left"
+                               Visibility="{Binding FocusedTile.TitleImage, Converter={StaticResource CollapsedWhenNull}}">
+                            <Image.Triggers>
+                                <EventTrigger RoutedEvent="Binding.TargetUpdated">
+                                    <BeginStoryboard Storyboard="{StaticResource FadeIn}" />
+                                </EventTrigger>
+                            </Image.Triggers>
+                        </Image>
+                        <TextBlock Text="{Binding FocusedTile.Title, NotifyOnTargetUpdated=True}" FontSize="68" FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding FocusedTile.TitleImage, Converter={StaticResource CollapsedWhenNull}}" Value="Visible">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                            <TextBlock.Triggers>
+                                <EventTrigger RoutedEvent="Binding.TargetUpdated">
+                                    <BeginStoryboard Storyboard="{StaticResource FadeIn}" />
+                                </EventTrigger>
+                            </TextBlock.Triggers>
+                        </TextBlock>
+                    </Grid>
+                    <TextBlock Text="{Binding FocusedTile.Description}" FontSize="24" Foreground="#C3C7CF" Margin="2,14,0,0" />
+                    <Border HorizontalAlignment="Left" Background="{StaticResource AccentBrush}" CornerRadius="4" Padding="26,0" Height="56" Margin="0,22,0,0"
+                            Visibility="{Binding FocusedTile.ActionLabel, Converter={StaticResource CollapsedWhenNull}}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Path Data="M0,0 L14,8 L0,16 Z" Fill="White" Width="14" Height="16" Margin="0,0,14,0" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding FocusedTile.ActionLabel}" FontSize="23" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- Rows of tiles. The vertical scroller moves between rows; each row scrolls sideways
                      on its own. Margins leave room for the focused tile's growth. -->
                 <!-- Tiles fade out at the bottom instead of being cut off. A mask stretches over what its
                      element draws, so this Grid's background is what makes it span the whole area. -->
-                <Grid Grid.Row="2" Background="Transparent">
+                <Grid Grid.Row="2" Background="Transparent" Visibility="{Binding IsSectionScreen, Converter={StaticResource CollapsedWhenTrue}}">
                     <Grid.OpacityMask>
                         <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                             <GradientStop Color="#FF000000" Offset="0" />
@@ -353,69 +509,110 @@
                             <GradientStop Color="#00000000" Offset="1" />
                         </LinearGradientBrush>
                     </Grid.OpacityMask>
-                <ScrollViewer x:Name="TileScroller" Focusable="False" VerticalScrollBarVisibility="Hidden"
-                              IsEnabled="{Binding IsConfirmOpen, Converter={StaticResource Inverse}}">
-                    <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" RequestBringIntoView="OnTileBringIntoView">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,0,0,24">
-                                    <StackPanel.Triggers>
-                                        <EventTrigger RoutedEvent="Loaded">
-                                            <BeginStoryboard Storyboard="{StaticResource FadeIn}" />
-                                        </EventTrigger>
-                                    </StackPanel.Triggers>
-                                    <TextBlock Text="{Binding Title}" FontSize="26" FontWeight="SemiBold" Margin="68,0,0,4" />
-                                    <ScrollViewer Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
-                                        <ItemsControl ItemsSource="{Binding Tiles}" Focusable="False" Margin="64,14,64,6">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <StackPanel Orientation="Horizontal" />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Button Tag="{Binding Key}" Command="{Binding Command}" Style="{StaticResource TileButton}"
-                                                            AutomationProperties.Name="{Binding Title}">
-                                                        <Grid>
-                                                            <!-- The tile is a fixed size, so its corners can be clipped directly. -->
-                                                            <Grid.Clip>
-                                                                <RectangleGeometry Rect="0,0,352,194" RadiusX="10" RadiusY="10" />
-                                                            </Grid.Clip>
-                                                            <Image Source="{Binding Image, TargetNullValue={x:Null}}" Stretch="UniformToFill"
-                                                                   Visibility="{Binding Image, Converter={StaticResource CollapsedWhenNull}}" />
-                                                            <Image Source="{Binding IconPath, TargetNullValue={x:Null}}" Width="104" Height="104"
-                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                   Visibility="{Binding IconPath, Converter={StaticResource CollapsedWhenNull}}" />
-                                                            <Path Data="{Binding LogoPath}" Fill="{Binding LogoColor}" Stretch="Uniform" Width="104" Height="104"
-                                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                  Visibility="{Binding LogoPath, Converter={StaticResource CollapsedWhenNull}}" />
-                                                            <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="64" Foreground="White"
-                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                       Visibility="{Binding Glyph, Converter={StaticResource CollapsedWhenNull}}" />
-                                                            <TextBlock Text="{Binding Monogram}" FontSize="92" FontWeight="SemiBold" Foreground="White"
-                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                       Visibility="{Binding Monogram, Converter={StaticResource CollapsedWhenNull}}" />
-                                                        </Grid>
-                                                    </Button>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                    <ScrollViewer x:Name="TileScroller" Focusable="False" VerticalScrollBarVisibility="Hidden"
+                                  IsEnabled="{Binding IsBackgroundEnabled}">
+                        <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" RequestBringIntoView="OnTileBringIntoView">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,22">
+                                        <StackPanel.Triggers>
+                                            <EventTrigger RoutedEvent="Loaded">
+                                                <BeginStoryboard Storyboard="{StaticResource FadeIn}" />
+                                            </EventTrigger>
+                                        </StackPanel.Triggers>
+                                        <TextBlock Text="{Binding Title}" FontSize="25" FontWeight="SemiBold" Margin="96,0,0,2" />
+                                        <ScrollViewer Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                                            <ItemsControl ItemsSource="{Binding Tiles}" Focusable="False" Margin="92,14,64,6"
+                                                          ItemTemplate="{StaticResource TileContent}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- Games and Settings: sections on the left, the chosen one's contents on the right. -->
+                <Grid Grid.Row="1" Grid.RowSpan="2" Margin="96,56,64,0" IsEnabled="{Binding IsBackgroundEnabled}"
+                      Visibility="{Binding IsSectionScreen, Converter={StaticResource VisibleWhenTrue}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="400" />
+                        <ColumnDefinition />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock FontSize="38" FontWeight="SemiBold" Margin="2,0,0,30">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Settings" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsGamesScreen}" Value="True">
+                                            <Setter Property="Text" Value="My games" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <ItemsControl ItemsSource="{Binding Rows}" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Tag="{Binding FocusKey}" Style="{StaticResource SectionButton}" AutomationProperties.Name="{Binding Title}">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding Count}" FontSize="22" Opacity="0.6" VerticalAlignment="Center"
+                                                       Visibility="{Binding DataContext.IsGamesScreen, ElementName=Root, Converter={StaticResource VisibleWhenTrue}}" />
+                                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Column="1" Margin="40,0,0,0" Focusable="False" VerticalScrollBarVisibility="Hidden">
+                        <StackPanel>
+                            <TextBlock Text="{Binding SelectedSection}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource MutedTextBrush}"
+                                       Margin="6,14,0,22" />
+                            <!-- Games: a grid of tiles. -->
+                            <ItemsControl ItemsSource="{Binding SectionTiles}" Focusable="False" Margin="4,8,0,0"
+                                          Visibility="{Binding IsGamesScreen, Converter={StaticResource VisibleWhenTrue}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource TileContent}" Margin="0,0,0,34" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <!-- Settings: a list of options. -->
+                            <ItemsControl ItemsSource="{Binding SectionTiles}" Focusable="False" Width="1060" HorizontalAlignment="Left"
+                                          Visibility="{Binding IsSettingsScreen, Converter={StaticResource VisibleWhenTrue}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Tag="{Binding Key}" Command="{Binding Command}" Style="{StaticResource OptionButton}"
+                                                AutomationProperties.Name="{Binding Title}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
 
                 <!-- Shown instead of tiles when a screen has none. -->
                 <TextBlock Grid.Row="2" Text="{Binding EmptyText}" FontSize="36" Foreground="{StaticResource MutedTextBrush}"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
 
-                <!-- Footer: a message on the left when there is one, button hints on the right. -->
                 <!-- The Search screen's keyboard. Its keys are ordinary focusable buttons, so moving
                      between them and the results works like moving between tiles. -->
                 <ItemsControl Grid.Row="3" ItemsSource="{Binding SearchKeys}" Focusable="False" HorizontalAlignment="Center" Margin="0,0,0,12"
+                              IsEnabled="{Binding IsBackgroundEnabled}"
                               Visibility="{Binding IsSearchScreen, Converter={StaticResource VisibleWhenTrue}}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
@@ -436,22 +633,27 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <DockPanel Grid.Row="4" Margin="64,4,64,32" LastChildFill="True">
+                <!-- Footer: a message on the left when there is one, button hints on the right. -->
+                <DockPanel Grid.Row="4" Margin="96,4,96,34" LastChildFill="True">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Style="{StaticResource HintBadge}" Background="#2E8B57">
+                        <Border Style="{StaticResource HintBadge}" Background="#5EC45E">
                             <TextBlock Text="A" Style="{StaticResource HintBadgeText}" />
                         </Border>
                         <TextBlock Text="Select" Style="{StaticResource HintLabel}" />
-                        <Border Style="{StaticResource HintBadge}" Background="#C0392B">
+                        <Border Style="{StaticResource HintBadge}" Background="#E05252">
                             <TextBlock Text="B" Style="{StaticResource HintBadgeText}" />
                         </Border>
                         <TextBlock Text="Back" Style="{StaticResource HintLabel}" />
                         <Border Style="{StaticResource HintBadge}">
-                            <TextBlock Text="LB / RB" Style="{StaticResource HintBadgeText}" />
+                            <TextBlock Text="&#xE700;" FontFamily="{StaticResource IconFont}" FontSize="13" Style="{StaticResource HintBadgeText}" />
+                        </Border>
+                        <TextBlock Text="Menu" Style="{StaticResource HintLabel}" />
+                        <Border Style="{StaticResource HintBadge}" CornerRadius="4">
+                            <TextBlock Text="LB  RB" Style="{StaticResource HintBadgeText}" />
                         </Border>
                         <TextBlock Text="Volume" Style="{StaticResource HintLabel}" />
                     </StackPanel>
-                    <Border HorizontalAlignment="Left" Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="22,10"
+                    <Border HorizontalAlignment="Left" Background="{StaticResource SurfaceBrush}" CornerRadius="4" Padding="22,10"
                             BorderBrush="{StaticResource WarningBrush}" BorderThickness="1"
                             Visibility="{Binding Message, Converter={StaticResource CollapsedWhenNull}}">
                         <TextBlock Text="{Binding Message}" FontSize="24" TextWrapping="Wrap" />
@@ -460,11 +662,11 @@
 
                 <!-- Volume overlay. -->
                 <Border Grid.RowSpan="5" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,110"
-                        Background="#F2191C24" CornerRadius="20" Padding="36,24" Width="680"
+                        Background="#F217191D" CornerRadius="6" Padding="36,24" Width="680"
                         BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1"
                         Visibility="{Binding IsVolumeVisible, Converter={StaticResource VisibleWhenTrue}}">
                     <DockPanel>
-                        <TextBlock DockPanel.Dock="Left" FontFamily="{StaticResource IconFont}" FontSize="38" VerticalAlignment="Center" Margin="0,0,24,0">
+                        <TextBlock DockPanel.Dock="Left" FontFamily="{StaticResource IconFont}" FontSize="36" VerticalAlignment="Center" Margin="0,0,24,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Text" Value="{x:Static vm:Glyphs.VolumeUp}" />
@@ -476,7 +678,7 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock DockPanel.Dock="Right" FontSize="32" FontWeight="SemiBold" Margin="24,0,0,0" Width="110" TextAlignment="Right" VerticalAlignment="Center">
+                        <TextBlock DockPanel.Dock="Right" FontSize="30" FontWeight="SemiBold" Margin="24,0,0,0" Width="110" TextAlignment="Right" VerticalAlignment="Center">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Text" Value="{Binding VolumePercent, StringFormat={}{0}%}" />
@@ -488,27 +690,68 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding VolumePercent, Mode=OneWay}" Height="10" VerticalAlignment="Center"
-                                     Foreground="White" Background="{StaticResource SubtleSurfaceBrush}" BorderThickness="0" />
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding VolumePercent, Mode=OneWay}" Height="8" VerticalAlignment="Center"
+                                     Foreground="{StaticResource AccentBrightBrush}" Background="{StaticResource SubtleSurfaceBrush}" BorderThickness="0" />
                     </DockPanel>
                 </Border>
             </Grid>
         </Viewbox>
 
+        <!-- The Start menu: slides in from the left over whatever screen is open. -->
+        <Grid Visibility="{Binding IsGuideOpen, Converter={StaticResource VisibleWhenTrue}}">
+            <!-- Scaled to the screen's height, so the panel reaches top and bottom on any shape of screen. -->
+            <Border HorizontalAlignment="Left" Background="#17191D" BorderBrush="#2B2E35" BorderThickness="0,0,1,0">
+                <!-- Fades back too, while a confirmation from it is open. -->
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsConfirmOpen}" Value="True">
+                                <Setter Property="Opacity" Value="0.3" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+            <Viewbox Stretch="Uniform" VerticalAlignment="Top">
+                <Grid Width="640" Height="1080">
+                    <Border IsEnabled="{Binding IsConfirmOpen, Converter={StaticResource Inverse}}">
+                        <StackPanel Margin="0,64,0,0">
+                            <DockPanel Margin="52,0,52,30">
+                                <Control DockPanel.Dock="Left" Template="{StaticResource Logo}" Width="50" Height="50" Margin="0,0,18,0" Focusable="False" />
+                                <TextBlock DockPanel.Dock="Right" x:Name="GuideClock" FontSize="24" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="CouchShell" FontSize="28" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </DockPanel>
+                            <ItemsControl ItemsSource="{Binding GuideItems}" Focusable="False">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Group}" FontSize="18" FontWeight="SemiBold" Foreground="#8B909A" Margin="52,22,52,10"
+                                                       Visibility="{Binding Group, Converter={StaticResource CollapsedWhenNull}}" />
+                                            <Button Tag="{Binding Key}" Command="{Binding Command}" Style="{StaticResource GuideButton}"
+                                                    AutomationProperties.Name="{Binding Label}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="Left and right change the volume" FontSize="19" Foreground="#8B909A" Margin="52,30,52,0" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Viewbox>
+            </Border>
+        </Grid>
+
         <!-- Confirmation step for power actions. Outside the main Viewbox, so the dimming also
              covers any bars on a screen that isn't 16:9. -->
-        <Grid Background="#D905060A" Visibility="{Binding IsConfirmOpen, Converter={StaticResource VisibleWhenTrue}}">
+        <Grid Visibility="{Binding IsConfirmOpen, Converter={StaticResource VisibleWhenTrue}}">
             <Viewbox Stretch="Uniform">
                 <Grid Width="1920" Height="1080">
-                    <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="{StaticResource SurfaceBrush}" CornerRadius="24" Padding="80,56"
+                    <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="{StaticResource SurfaceBrush}" CornerRadius="6" Padding="80,56"
                             BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1">
                         <StackPanel>
-                            <TextBlock Text="{Binding ConfirmText}" FontSize="44" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,40" />
+                            <TextBlock Text="{Binding ConfirmText}" FontSize="42" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,40" />
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <Button Content="Yes" Tag="confirm:yes" Command="{Binding ConfirmYesCommand}" Style="{StaticResource PillButton}"
-                                        Width="220" Margin="12,0" FontSize="32" />
-                                <Button Content="No" Tag="confirm:no" Command="{Binding ConfirmNoCommand}" Style="{StaticResource PillButton}"
-                                        Width="220" Margin="12,0" FontSize="32" />
+                                <Button Content="Yes" Tag="confirm:yes" Command="{Binding ConfirmYesCommand}" Style="{StaticResource DialogButton}" />
+                                <Button Content="No" Tag="confirm:no" Command="{Binding ConfirmNoCommand}" Style="{StaticResource DialogButton}" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -516,25 +759,25 @@
             </Viewbox>
         </Grid>
 
-        <!-- Startup animation: the logo springs in, a ring spreads out, then it all fades away to
+        <!-- Startup animation: the logo grows in, a green ring spreads out, then it all fades away to
              reveal the home screen. Clicks and focus pass through it. -->
-        <Grid x:Name="Splash" Background="#0B0D12" IsHitTestVisible="False">
+        <Grid x:Name="Splash" Background="#0D0E11" IsHitTestVisible="False">
             <Grid.Triggers>
                 <EventTrigger RoutedEvent="Loaded">
                     <BeginStoryboard>
                         <Storyboard>
                             <DoubleAnimation Storyboard.TargetName="SplashLogo" Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.35" />
-                            <DoubleAnimation Storyboard.TargetName="SplashScale" Storyboard.TargetProperty="ScaleX" From="0.55" To="1" Duration="0:0:0.75">
+                            <DoubleAnimation Storyboard.TargetName="SplashScale" Storyboard.TargetProperty="ScaleX" From="0.7" To="1" Duration="0:0:0.6">
                                 <DoubleAnimation.EasingFunction>
-                                    <BackEase EasingMode="EaseOut" Amplitude="0.55" />
+                                    <CubicEase EasingMode="EaseOut" />
                                 </DoubleAnimation.EasingFunction>
                             </DoubleAnimation>
-                            <DoubleAnimation Storyboard.TargetName="SplashScale" Storyboard.TargetProperty="ScaleY" From="0.55" To="1" Duration="0:0:0.75">
+                            <DoubleAnimation Storyboard.TargetName="SplashScale" Storyboard.TargetProperty="ScaleY" From="0.7" To="1" Duration="0:0:0.6">
                                 <DoubleAnimation.EasingFunction>
-                                    <BackEase EasingMode="EaseOut" Amplitude="0.55" />
+                                    <CubicEase EasingMode="EaseOut" />
                                 </DoubleAnimation.EasingFunction>
                             </DoubleAnimation>
-                            <DoubleAnimation Storyboard.TargetName="SplashRing" Storyboard.TargetProperty="Opacity" BeginTime="0:0:0.25" From="0.7" To="0" Duration="0:0:1.1" />
+                            <DoubleAnimation Storyboard.TargetName="SplashRing" Storyboard.TargetProperty="Opacity" BeginTime="0:0:0.25" From="0.6" To="0" Duration="0:0:1.1" />
                             <DoubleAnimation Storyboard.TargetName="SplashRingScale" Storyboard.TargetProperty="ScaleX" BeginTime="0:0:0.25" From="0.8" To="3" Duration="0:0:1.1">
                                 <DoubleAnimation.EasingFunction>
                                     <CubicEase EasingMode="EaseOut" />
@@ -559,17 +802,9 @@
                     </BeginStoryboard>
                 </EventTrigger>
             </Grid.Triggers>
-            <Rectangle>
-                <Rectangle.Fill>
-                    <RadialGradientBrush RadiusX="0.5" RadiusY="0.6">
-                        <GradientStop Color="#26406CFF" Offset="0" />
-                        <GradientStop Color="#000B0D12" Offset="1" />
-                    </RadialGradientBrush>
-                </Rectangle.Fill>
-            </Rectangle>
             <Viewbox Stretch="Uniform">
                 <Grid Width="1920" Height="1080">
-                    <Ellipse x:Name="SplashRing" Width="220" Height="220" Stroke="#8C98FF" StrokeThickness="3" Opacity="0"
+                    <Ellipse x:Name="SplashRing" Width="220" Height="220" Stroke="#3DBA3D" StrokeThickness="3" Opacity="0"
                              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,90" RenderTransformOrigin="0.5,0.5">
                         <Ellipse.RenderTransform>
                             <ScaleTransform x:Name="SplashRingScale" />

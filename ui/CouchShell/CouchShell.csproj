@@ -11,7 +11,7 @@
     <!-- Shown by Windows for the .exe; tools/make-icon.ps1 draws it. -->
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <!-- The installer's version comes from here too. -->
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Product>CouchShell</Product>
     <Company>Vaasu Jindal</Company>
     <Copyright>Copyright (c) 2026 Vaasu Jindal</Copyright>

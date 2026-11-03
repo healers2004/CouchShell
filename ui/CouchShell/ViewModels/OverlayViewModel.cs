@@ -45,6 +45,7 @@ public sealed class OverlayViewModel : ViewModelBase
 
     private bool _isHintVisible;
     private bool _isKeyboardVisible;
+    private bool _isWaiting;
     private string _hint = "";
     private bool _isShift;
     private int _row;
@@ -100,16 +101,25 @@ public sealed class OverlayViewModel : ViewModelBase
     // The keyboard lists its own controls, so the bar steps aside while it's open.
     public bool ShowHint => IsHintVisible && !IsKeyboardVisible;
 
-    public void ShowHintFor(WebControlStyle style, bool canLeaveRunning = false)
+    // waitingFor names what is on screen before the app starts: its launcher, like Steam.
+    public void ShowHintFor(WebControlStyle style, bool canLeaveRunning = false, string? waitingFor = null)
     {
+        IsWaiting = style == WebControlStyle.WaitingForLaunch;
         Hint = style switch
         {
             WebControlStyle.Keys => "D-pad: move    A: select    B: back    Start: keyboard    Hold View: exit    Press right stick: hide this",
-            WebControlStyle.WaitingForLaunch => "Waiting for Steam    Left stick: pointer    A: click    Hold View: cancel    Press right stick: hide this",
+            WebControlStyle.WaitingForLaunch => $"Waiting for {waitingFor ?? "the app"}    Left stick: pointer    A: click    Hold View: cancel    Press right stick: hide this",
             _ when canLeaveRunning => "Left stick: pointer    A: click    B: back    Right stick: scroll    Start: keyboard    Tap View: home, keeps running    Hold View: close    Press right stick: hide this",
             _ => "Left stick: pointer    A: click    B: back    Right stick: scroll    X: play/pause    Y: fullscreen    Start: keyboard    Hold View: exit    Press right stick: hide this",
         };
         IsHintVisible = true;
+    }
+
+    // A launcher is up before the game: the bar shows a spinner.
+    public bool IsWaiting
+    {
+        get => _isWaiting;
+        private set => Set(ref _isWaiting, value);
     }
 
     public void ToggleShift()

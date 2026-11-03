@@ -18,6 +18,7 @@ public static partial class SteamLibrary
     private static readonly string[] HiddenNamePrefixes = ["Steamworks", "Steam Linux Runtime", "Proton"];
     private static readonly string[] ArtworkNames = ["header.jpg", "library_header.jpg", "library_hero.jpg"];
     private static readonly string[] BackdropNames = ["library_hero.jpg"];
+    private static readonly string[] TitleImageNames = ["logo.png"];
 
     // A `"key"  "value"` line. Values escape backslashes as \\.
     [GeneratedRegex("\"([^\"]+)\"\\s+\"((?:[^\"\\\\]|\\\\.)*)\"")]
@@ -65,6 +66,7 @@ public static partial class SteamLibrary
         return new AppDefinition("steam-" + appId, name, "games", "steam", appId,
             Image: FindArtwork(steamFolder, appId, ArtworkNames),
             Backdrop: FindArtwork(steamFolder, appId, BackdropNames),
+            TitleImage: FindArtwork(steamFolder, appId, TitleImageNames),
             InstallFolder: fields.TryGetValue("installdir", out string? folder)
                 ? Path.Combine(library ?? steamFolder, "steamapps", "common", folder)
                 : null);

@@ -75,6 +75,9 @@ public class MainViewModel : ViewModelBase
     private string? _confirmText;
     private Func<Task>? _confirmAction;
     private string? _confirmReturnKey;
+    private string? _selectedSection;
+    private bool _isGuideOpen;
+    private string? _guideReturnKey;
 
     public MainViewModel(ICouchClient client, IReadOnlyList<AppDefinition> catalog, IWindowService window)
     {
@@ -94,6 +97,8 @@ public class MainViewModel : ViewModelBase
         VolumeDownCommand = new RelayCommand(_ => Guard(() => RequestAsync("volume down")));
         VolumeUpCommand = new RelayCommand(_ => Guard(() => RequestAsync("volume up")));
         MuteCommand = new RelayCommand(_ => Guard(() => RequestAsync("volume mute")));
+        GuideCommand = new RelayCommand(_ => ToggleGuide());
+        GuideItems = BuildGuide();
 
         client.ConnectionChanged += connected => Guard(() => OnConnectionChangedAsync(connected));
         client.MessageReceived += (channel, payload) =>
@@ -143,6 +148,56 @@ public class MainViewModel : ViewModelBase
     public ICommand VolumeDownCommand { get; }
     public ICommand VolumeUpCommand { get; }
     public ICommand MuteCommand { get; }
+    public ICommand GuideCommand { get; }
+
+    // Games and Settings: a list of sections on the left, and the chosen one's contents.
+    public bool IsSectionScreen => CurrentScreen is GamesScreen or SettingsScreen;
+    public bool IsGamesScreen => CurrentScreen == GamesScreen;
+    public bool IsSettingsScreen => CurrentScreen == SettingsScreen;
+
+    // The section whose contents are showing: one of the rows' titles.
+    public string? SelectedSection
+    {
+        get => _selectedSection;
+        private set
+        {
+            _selectedSection = value;
+            Notify(nameof(SelectedSection));
+            Notify(nameof(SectionTiles));
+        }
+    }
+
+    public IReadOnlyList<TileViewModel> SectionTiles => Rows.FirstOrDefault(row => row.Title == SelectedSection)?.Tiles ?? [];
+
+    // Moving onto a section shows its contents, like moving onto a tab.
+    public void ShowSection(string title)
+    {
+        if (title != SelectedSection && Rows.Any(row => row.Title == title)) SelectedSection = title;
+    }
+
+    // Before focusing a tile by key: if it's in another section, show that section.
+    public void RevealTile(string? key)
+    {
+        if (key == null || !IsSectionScreen || SectionTiles.Any(tile => tile.Key == key)) return;
+        TileRow? row = Rows.FirstOrDefault(candidate => candidate.Tiles.Any(tile => tile.Key == key));
+        if (row != null) SelectedSection = row.Title;
+    }
+
+    // The Start menu: volume, sounds, pointer speed and power, over any screen.
+    public IReadOnlyList<GuideItem> GuideItems { get; }
+
+    public bool IsGuideOpen
+    {
+        get => _isGuideOpen;
+        private set
+        {
+            Set(ref _isGuideOpen, value);
+            Notify(nameof(IsBackgroundEnabled));
+        }
+    }
+
+    // False while the menu or a confirmation is open, so focus can't wander behind them.
+    public bool IsBackgroundEnabled => !IsGuideOpen && !IsConfirmOpen;
 
     // Asks the view to focus a tile by key. Null means the first tile on the screen.
     public event Action<string?>? FocusRequested;
@@ -216,6 +271,9 @@ public class MainViewModel : ViewModelBase
         {
             Set(ref _currentScreen, value);
             Notify(nameof(IsSearchScreen));
+            Notify(nameof(IsSectionScreen));
+            Notify(nameof(IsGamesScreen));
+            Notify(nameof(IsSettingsScreen));
         }
     }
 
@@ -276,7 +334,11 @@ public class MainViewModel : ViewModelBase
     public bool IsConfirmOpen
     {
         get => _isConfirmOpen;
-        private set => Set(ref _isConfirmOpen, value);
+        private set
+        {
+            Set(ref _isConfirmOpen, value);
+            Notify(nameof(IsBackgroundEnabled));
+        }
     }
 
     // Which set of interface sounds to play, or SoundsOff.
@@ -287,6 +349,14 @@ public class MainViewModel : ViewModelBase
 
     // Things like music can carry on behind CouchShell. Not web apps: they share one browser, and
     // a second site would hand off to the browser that's still open.
+    // What has a window up while a launch waits: the game's launcher, or the app itself.
+    public string? LaunchWaitingFor => FindApp(_runningAppId) is not { } app ? null : app switch
+    {
+        { Type: "steam" } => "Steam",
+        { Source: "Battle.net" or "Riot Games" or "Epic Games" } => app.Source,
+        _ => app.Name,
+    };
+
     public bool CanLeaveRunningApp =>
         _runningAppId != null && !_isWaitingForLaunch && FindApp(_runningAppId) is { Type: not "web" };
 
@@ -514,7 +584,8 @@ public class MainViewModel : ViewModelBase
         VolumePercent = percent;
         IsMuted = muted;
         _volumeKnown = true;
-        if (changed) ShowVolumeOverlay();
+        UpdateGuideValues();
+        if (changed && !IsGuideOpen) ShowVolumeOverlay();  // the menu shows the volume itself
     }
 
     private async void ShowVolumeOverlay()
@@ -552,6 +623,11 @@ public class MainViewModel : ViewModelBase
             CloseConfirm();
             return;
         }
+        if (IsGuideOpen)
+        {
+            CloseGuide();
+            return;
+        }
         Message = null;
         // While searching, B works like backspace, as it does on the on-screen keyboard.
         if (IsSearchScreen && _searchText.Length > 0)
@@ -572,7 +648,7 @@ public class MainViewModel : ViewModelBase
                 AddAppRow("All apps", _apps);
                 break;
             case GamesScreen:
-                AddAppRow("Games", _apps.Where(app => app.Category == "games"));
+                AddGamesRows();
                 break;
             case WatchScreen:
                 AddAppRow("Watch", _apps.Where(app => app.Category == "watch"));
@@ -592,7 +668,18 @@ public class MainViewModel : ViewModelBase
                 break;
         }
         if (Rows.Count == 0) FocusedTile = null;
+        if (IsSectionScreen) SelectedSection = Rows.Any(row => row.Title == SelectedSection) ? SelectedSection : Rows.FirstOrDefault()?.Title;
         UpdateEmptyText();
+    }
+
+    // Every game, then one section per store, so a big library can be narrowed down.
+    private void AddGamesRows()
+    {
+        List<AppDefinition> games = _apps.Where(app => app.Category == "games").ToList();
+        AddAppRow("All games", games);
+        var stores = games.GroupBy(game => game.Source ?? (game.Type == "steam" ? "Steam" : "Other")).OrderBy(store => store.Key).ToList();
+        if (stores.Count < 2) return;  // the one store's list would just repeat All games
+        foreach (IGrouping<string, AppDefinition> store in stores) AddAppRow(store.Key, store);
     }
 
     private void UpdateEmptyText()
@@ -623,6 +710,14 @@ public class MainViewModel : ViewModelBase
             .OfType<AppDefinition>()
             .Take(RecentTiles);
         AddAppRow("Recently used", recent);
+        // The latest one leads, wider, with its full artwork when it has some.
+        if (Rows.Count > 0 && Rows[0].Title == "Recently used")
+        {
+            List<TileViewModel> tiles = [.. Rows[0].Tiles];
+            AppDefinition? first = FindApp(tiles[0].Key);
+            tiles[0] = tiles[0] with { IsWide = true, Image = first?.Backdrop ?? tiles[0].Image };
+            Rows[0] = Rows[0] with { Tiles = tiles };
+        }
     }
 
     private void AddAppRow(string title, IEnumerable<AppDefinition> apps)
@@ -633,7 +728,7 @@ public class MainViewModel : ViewModelBase
         if (tiles.Count > 0) Rows.Add(new TileRow(title, tiles));
     }
 
-    private static TileViewModel TileFor(AppDefinition app, ICommand command)
+    private TileViewModel TileFor(AppDefinition app, ICommand command)
     {
         BrandLogo? logo = BrandLogos.Find(app.Logo);
         return new TileViewModel(app.Id, app.Name, null, app.Image, command,
@@ -641,7 +736,8 @@ public class MainViewModel : ViewModelBase
             LogoPath: app.Image == null ? logo?.Path : null,
             LogoColor: logo?.Color,
             Backdrop: app.Backdrop,
-            Description: DescribeApp(app),
+            Description: WithLastPlayed(DescribeApp(app), app.Id),
+            TitleImage: app.TitleImage,
             ActionLabel: app.Category == "games" ? "Play" : "Open",
             IconPath: app.Image == null && logo == null ? app.Icon : null);
     }
@@ -652,6 +748,31 @@ public class MainViewModel : ViewModelBase
         "web" => app.Window == "browser" ? "Web browser" : "Web app",
         _ => "App",
     };
+
+    // "Steam  ·  Last played yesterday", from the play history.
+    private string WithLastPlayed(string description, string id)
+    {
+        foreach (string session in _sessions)
+        {
+            string[] parts = session.Split('\t');
+            if (parts.Length == 3 && parts[0] == id && long.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out long end))
+                return $"{description}  ·  Last played {DescribeDay(end, DateTimeOffset.Now)}";
+        }
+        return description;
+    }
+
+    public static string DescribeDay(long endMs, DateTimeOffset now)
+    {
+        DateTime day = DateTimeOffset.FromUnixTimeMilliseconds(endMs).ToOffset(now.Offset).Date;
+        int daysAgo = (now.Date - day).Days;
+        return daysAgo switch
+        {
+            <= 0 => "today",
+            1 => "yesterday",
+            < 7 => $"{daysAgo} days ago",
+            _ => day.ToString("MMM d", CultureInfo.CurrentCulture),
+        };
+    }
 
     private void AddHistoryRow()
     {
@@ -686,11 +807,6 @@ public class MainViewModel : ViewModelBase
 
     private void AddSettingsRows()
     {
-        Rows.Add(new TileRow("Browser for web apps",
-        [
-            BrowserTile("chrome", "Google Chrome"),
-            BrowserTile("edge", "Microsoft Edge"),
-        ]));
         Rows.Add(new TileRow("Sound",
         [
             new TileViewModel("sound:down", "Volume down", null, null, VolumeDownCommand, Glyphs.VolumeDown, Description: "Also LB on the controller"),
@@ -699,20 +815,22 @@ public class MainViewModel : ViewModelBase
             new TileViewModel("sound:ui", "Interface sounds", SoundPacks.First(known => known.Id == SoundPack).Label, null,
                 new RelayCommand(_ => Guard(NextSoundPackAsync)), Glyphs.Sounds, Description: "Press A to try the next style, then move to hear it"),
         ]));
-        Rows.Add(new TileRow("Pointer speed",
+        Rows.Add(new TileRow("Controller",
         [
             PointerTile("Slow", SlowPointer),
             PointerTile("Medium", MediumPointer),
             PointerTile("High", HighPointer),
-        ]));
-        Rows.Add(new TileRow("Pointer speed: advanced",
-        [
-            new TileViewModel("pointer:slower", "Slower", $"Now {PointerSpeed}%", null,
+            new TileViewModel("pointer:slower", "Pointer slower", $"Now {PointerSpeed}%", null,
                 new RelayCommand(_ => Guard(() => SetPointerSpeedAsync(PointerSpeed - PointerStep, "pointer:slower"))), Glyphs.Slower,
                 Description: $"How fast the left stick moves the pointer in apps, in steps of {PointerStep}%"),
-            new TileViewModel("pointer:faster", "Faster", $"Now {PointerSpeed}%", null,
+            new TileViewModel("pointer:faster", "Pointer faster", $"Now {PointerSpeed}%", null,
                 new RelayCommand(_ => Guard(() => SetPointerSpeedAsync(PointerSpeed + PointerStep, "pointer:faster"))), Glyphs.Faster,
                 Description: $"How fast the left stick moves the pointer in apps, in steps of {PointerStep}%"),
+        ]));
+        Rows.Add(new TileRow("Web apps",
+        [
+            BrowserTile("chrome", "Google Chrome"),
+            BrowserTile("edge", "Microsoft Edge"),
         ]));
         Rows.Add(new TileRow("Power",
         [
@@ -738,18 +856,27 @@ public class MainViewModel : ViewModelBase
     private TileViewModel ConfirmTile(string action, string name, string question, string glyph, Func<Task> confirmed)
     {
         string key = "power:" + action;
-        return new TileViewModel(key, name, null, null, new RelayCommand(_ =>
-        {
-            _confirmAction = confirmed;
-            _confirmReturnKey = key;
-            ConfirmText = question;
-            FocusRequested?.Invoke("confirm:no");  // the safe answer starts focused
-        }), glyph, Description: "Asks you to confirm first");
+        return new TileViewModel(key, name, null, null, new RelayCommand(_ => AskToConfirm(question, key, confirmed)),
+            glyph, Description: "Asks you to confirm first");
+    }
+
+    private void AskToConfirm(string question, string returnKey, Func<Task> confirmed)
+    {
+        _confirmAction = confirmed;
+        _confirmReturnKey = returnKey;
+        ConfirmText = question;
+        FocusRequested?.Invoke("confirm:no");  // the safe answer starts focused
     }
 
     private async Task ConfirmYesAsync()
     {
         Func<Task>? action = _confirmAction;
+        if (IsGuideOpen)
+        {
+            // Done with the menu too: focus goes back to where it was before it opened.
+            IsGuideOpen = false;
+            _confirmReturnKey = _guideReturnKey;
+        }
         CloseConfirm();
         if (action != null) await action();
     }
@@ -762,7 +889,7 @@ public class MainViewModel : ViewModelBase
     }
 
     private TileViewModel PointerTile(string name, int percent) =>
-        new("pointer:" + percent, name, PointerSpeed == percent ? "Selected" : $"{percent}%", null,
+        new("pointer:" + percent, "Pointer speed: " + name, PointerSpeed == percent ? "Selected" : $"{percent}%", null,
             new RelayCommand(_ => Guard(() => SetPointerSpeedAsync(percent, "pointer:" + percent))), Glyphs.Pointer,
             Description: "How fast the left stick moves the pointer in apps");
 
@@ -771,6 +898,7 @@ public class MainViewModel : ViewModelBase
         int speed = Math.Clamp(percent, PointerStep, HighPointer);
         await _client.SendAsync("HSET", SettingsKey, "pointerSpeed", speed.ToString(CultureInfo.InvariantCulture));
         PointerSpeed = speed;
+        UpdateGuideValues();
         RebuildRows();
         FocusRequested?.Invoke(focusKey);
     }
@@ -781,8 +909,9 @@ public class MainViewModel : ViewModelBase
         string next = SoundPacks[(current + 1) % SoundPacks.Length].Id;
         await _client.SendAsync("HSET", SettingsKey, "sounds", next);
         SoundPack = next;
+        UpdateGuideValues();
         RebuildRows();
-        FocusRequested?.Invoke("sound:ui");
+        if (!IsGuideOpen) FocusRequested?.Invoke("sound:ui");
     }
 
     private async Task SetBrowserAsync(string id)
@@ -791,6 +920,75 @@ public class MainViewModel : ViewModelBase
         _browser = id;
         RebuildRows();
         FocusRequested?.Invoke("browser:" + id);
+    }
+
+    private List<GuideItem> BuildGuide()
+    {
+        var doNothing = new RelayCommand(_ => { });
+        return
+        [
+            new("guide:volume", "Volume", Glyphs.VolumeUp, doNothing, isSlider: true, group: "Quick settings"),
+            new("guide:mute", "Mute", Glyphs.Mute, MuteCommand),
+            new("guide:sounds", "Interface sounds", Glyphs.Sounds, new RelayCommand(_ => Guard(NextSoundPackAsync))),
+            new("guide:pointer", "Pointer speed", Glyphs.Pointer, new RelayCommand(_ => Guard(NextPointerSpeedAsync))),
+            GuideConfirm("exit", "Exit to Windows", "Exit CouchShell and go back to Windows?", Glyphs.Exit, () =>
+            {
+                ExitRequested?.Invoke();
+                return Task.CompletedTask;
+            }, "Power"),
+            GuideConfirm("sleep", "Sleep", "Put the PC to sleep?", Glyphs.Sleep, () => RequestAsync("power sleep")),
+            GuideConfirm("restart", "Restart", "Restart the PC?", Glyphs.Restart, () => RequestAsync("power restart")),
+            GuideConfirm("shutdown", "Shut down", "Shut down the PC?", Glyphs.Power, () => RequestAsync("power shutdown")),
+        ];
+    }
+
+    private GuideItem GuideConfirm(string action, string label, string question, string glyph, Func<Task> confirmed, string? group = null)
+    {
+        string key = "guide:" + action;
+        return new GuideItem(key, label, glyph, new RelayCommand(_ => AskToConfirm(question, key, confirmed)), group: group);
+    }
+
+    private void UpdateGuideValues()
+    {
+        foreach (GuideItem item in GuideItems)
+        {
+            item.Value = item.Key switch
+            {
+                "guide:volume" => IsMuted ? "Muted" : VolumePercent.ToString(CultureInfo.CurrentCulture),
+                "guide:mute" => IsMuted ? "On" : "Off",
+                "guide:sounds" => SoundPacks.First(known => known.Id == SoundPack).Label,
+                "guide:pointer" => PointerSpeed switch { SlowPointer => "Slow", MediumPointer => "Medium", HighPointer => "High", _ => $"{PointerSpeed}%" },
+                _ => null,
+            };
+        }
+    }
+
+    private void ToggleGuide()
+    {
+        if (IsGuideOpen) CloseGuide();
+        else OpenGuide();
+    }
+
+    public void OpenGuide()
+    {
+        if (IsGuideOpen || IsConfirmOpen) return;
+        _guideReturnKey = FocusedTile?.Key;
+        UpdateGuideValues();
+        IsGuideOpen = true;
+        FocusRequested?.Invoke("guide:volume");
+    }
+
+    private void CloseGuide()
+    {
+        IsGuideOpen = false;
+        FocusRequested?.Invoke(_guideReturnKey);
+    }
+
+    // Slow, Medium, High, then back to Slow. A finer setting from Settings goes to Slow next.
+    private Task NextPointerSpeedAsync()
+    {
+        int next = PointerSpeed switch { SlowPointer => MediumPointer, MediumPointer => HighPointer, _ => SlowPointer };
+        return SetPointerSpeedAsync(next, "guide:pointer");
     }
 
     private async Task LaunchAsync(AppDefinition app)

@@ -7,23 +7,17 @@ Add-Type -AssemblyName PresentationCore, PresentationFramework, WindowsBase
 $output = Join-Path (Split-Path -Parent $PSScriptRoot) 'ui\CouchShell\Assets\app.ico'
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $output) | Out-Null
 
-# The couch, on a 256 x 256 grid. The header logo in MainWindow.xaml uses the same shapes.
+# A TV with a green controller in it, on a 256 x 256 grid. The header logo in MainWindow.xaml uses the same shapes.
 $logo = [Windows.Markup.XamlReader]::Parse(@'
 <Canvas xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Width="256" Height="256">
-  <Rectangle Width="256" Height="256" RadiusX="56" RadiusY="56">
-    <Rectangle.Fill>
-      <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Color="#6D7CFF" Offset="0" />
-        <GradientStop Color="#3A2BB8" Offset="1" />
-      </LinearGradientBrush>
-    </Rectangle.Fill>
-  </Rectangle>
-  <Rectangle Canvas.Left="66" Canvas.Top="70" Width="124" Height="72" RadiusX="20" RadiusY="20" Fill="#C9D0FF" />
-  <Rectangle Canvas.Left="72" Canvas.Top="130" Width="112" Height="48" RadiusX="10" RadiusY="10" Fill="White" />
-  <Rectangle Canvas.Left="38" Canvas.Top="112" Width="46" Height="72" RadiusX="20" RadiusY="20" Fill="White" />
-  <Rectangle Canvas.Left="172" Canvas.Top="112" Width="46" Height="72" RadiusX="20" RadiusY="20" Fill="White" />
-  <Rectangle Canvas.Left="60" Canvas.Top="184" Width="18" Height="20" RadiusX="4" RadiusY="4" Fill="White" />
-  <Rectangle Canvas.Left="178" Canvas.Top="184" Width="18" Height="20" RadiusX="4" RadiusY="4" Fill="White" />
+  <Rectangle Width="256" Height="256" RadiusX="56" RadiusY="56" Fill="#15171C" />
+  <Rectangle Canvas.Left="46" Canvas.Top="58" Width="164" Height="114" RadiusX="20" RadiusY="20" Stroke="White" StrokeThickness="14" />
+  <Path Data="M100,200 H156" Stroke="White" StrokeThickness="14" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+  <Path Fill="#3DBA3D" Data="M100,98 H156 A26,26 0 0 1 181,131 L176,146 A11,11 0 0 1 157,149 L150,139 H106 L99,149 A11,11 0 0 1 80,146 L75,131 A26,26 0 0 1 100,98 Z" />
+  <Rectangle Canvas.Left="92" Canvas.Top="114" Width="6" Height="18" RadiusX="2" RadiusY="2" Fill="#15171C" />
+  <Rectangle Canvas.Left="86" Canvas.Top="120" Width="18" Height="6" RadiusX="2" RadiusY="2" Fill="#15171C" />
+  <Ellipse Canvas.Left="155.5" Canvas.Top="111.5" Width="9" Height="9" Fill="#15171C" />
+  <Ellipse Canvas.Left="165.5" Canvas.Top="121.5" Width="9" Height="9" Fill="#15171C" />
 </Canvas>
 '@)
 

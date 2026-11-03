@@ -27,6 +27,14 @@ public class ControllerInputMapperTests
     }
 
     [Fact]
+    public void StartOpensTheMenuOncePerPress()
+    {
+        var mapper = Connected();
+        Assert.Equal([NavAction.Menu], mapper.Update(ButtonStart, 0, 0, Ms(10)));
+        Assert.Empty(mapper.Update(ButtonStart, 0, 0, Ms(500)));  // held, not pressed again
+    }
+
+    [Fact]
     public void ReleaseThenPressMovesImmediately()
     {
         var mapper = Connected();

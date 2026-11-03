@@ -21,14 +21,41 @@
     <!-- Designed on the same 1920x1080 canvas as the main window. -->
     <Viewbox Stretch="Uniform">
         <Grid Width="1920" Height="1080">
-            <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,28" Background="#E6191C24"
-                    CornerRadius="16" Padding="26,12" BorderBrush="#40FFFFFF" BorderThickness="1"
+            <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,40" Background="#F517191D"
+                    CornerRadius="6" Padding="28,16" BorderBrush="#30333B" BorderThickness="1"
                     Visibility="{Binding ShowHint, Converter={StaticResource VisibleWhenTrue}}">
-                <TextBlock Text="{Binding Hint}" FontSize="22" />
+                <StackPanel Orientation="Horizontal">
+                    <!-- Turns while a launcher is up, so it's clear the game is still on its way. -->
+                    <Ellipse Width="26" Height="26" StrokeThickness="4" Margin="0,0,18,0" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5"
+                             Visibility="{Binding IsWaiting, Converter={StaticResource VisibleWhenTrue}}">
+                        <Ellipse.Stroke>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#3DBA3D" Offset="0" />
+                                <GradientStop Color="#3DBA3D" Offset="0.5" />
+                                <GradientStop Color="#3A3E46" Offset="0.5" />
+                                <GradientStop Color="#3A3E46" Offset="1" />
+                            </LinearGradientBrush>
+                        </Ellipse.Stroke>
+                        <Ellipse.RenderTransform>
+                            <RotateTransform x:Name="Spin" />
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Triggers>
+                            <EventTrigger RoutedEvent="Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Spin" Storyboard.TargetProperty="Angle" From="0" To="360"
+                                                         Duration="0:0:1" RepeatBehavior="Forever" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Ellipse.Triggers>
+                    </Ellipse>
+                    <TextBlock Text="{Binding Hint}" FontSize="22" VerticalAlignment="Center" />
+                </StackPanel>
             </Border>
 
-            <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,48" Background="#F5191C24"
-                    CornerRadius="28" Padding="32" BorderBrush="#40FFFFFF" BorderThickness="1"
+            <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,48" Background="#F517191D"
+                    CornerRadius="6" Padding="32" BorderBrush="#30333B" BorderThickness="1"
                     Visibility="{Binding IsKeyboardVisible, Converter={StaticResource VisibleWhenTrue}}">
                 <StackPanel>
                     <ItemsControl ItemsSource="{Binding Rows}">
@@ -42,7 +69,7 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border x:Name="Key" Height="76" MinWidth="88" Margin="5" CornerRadius="14" Background="#2A2E3A">
+                                            <Border x:Name="Key" Height="76" MinWidth="88" Margin="5" CornerRadius="4" Background="#262930">
                                                 <TextBlock x:Name="Label" Text="{Binding Label}" FontSize="32" FontWeight="SemiBold"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16,0" />
                                             </Border>
@@ -52,7 +79,7 @@
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                     <Setter TargetName="Key" Property="Background" Value="White" />
-                                                    <Setter TargetName="Label" Property="Foreground" Value="#0B0D12" />
+                                                    <Setter TargetName="Label" Property="Foreground" Value="#0D0E11" />
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
@@ -62,7 +89,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <TextBlock Text="D-pad: move    A: type    B: delete    X: space    Y: shift    Start: close" FontSize="24"
-                               Foreground="#A6ABBA" HorizontalAlignment="Center" Margin="0,16,0,0" />
+                               Foreground="#A4A9B3" HorizontalAlignment="Center" Margin="0,16,0,0" />
                 </StackPanel>
             </Border>
         </Grid>

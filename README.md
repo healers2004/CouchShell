@@ -7,10 +7,11 @@ A controller-first fullscreen interface for using a Windows PC from the couch. C
 
 ## Features
 
-- **One library.** Installed Steam, Riot Games, Battle.net and Epic Games titles appear automatically, alongside streaming services and your own apps.
+- **One library.** Installed Steam, Riot Games, Battle.net and Epic Games titles appear automatically, with their own artwork and icons, alongside streaming services and your own apps. Games can be narrowed down by store.
 - **Controller control everywhere.** Menus, web apps and ordinary desktop programs all work from the controller, with an on-screen keyboard when you need to type.
 - **Search anything installed.** Open any program in Windows' All apps list, including Store apps.
 - **Reliable by design.** The interface can crash mid-game without losing anything: restart it and it finds what's running. Settings and history survive a power cut.
+- **A console-style home screen.** The focused game's artwork fills the screen, and the Start button opens a menu with volume, sounds and power from anywhere.
 - **System controls from the couch.** Volume, mute, sleep, restart and shut down.
 - **Customizable.** Interface sounds, pointer speed, preferred browser, optional start at sign-in, and your own tiles.
 
@@ -36,7 +37,8 @@ In CouchShell's menus:
 | Back | B | Escape |
 | Volume down, up | LB, RB | `-`, `=` |
 | Mute | Y | M |
-| Exit CouchShell | Settings > Power | Alt+F4 |
+| Menu: volume, sounds, power | Start | G |
+| Exit CouchShell | Start, then Exit to Windows | Alt+F4 |
 
 While a web app or a program opened from Search is in front, the controller drives it. Games read the controller themselves and aren't affected.
 

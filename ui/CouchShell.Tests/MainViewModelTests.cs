@@ -522,6 +522,156 @@ public class MainViewModelTests
         Assert.Matches("^[a-z0-9_-]{1,64}$", id);
     }
 
+    private static readonly AppDefinition Raid = new("raid", "Raid", "games", "exe", "C:\\bnet.exe", Source: "Battle.net");
+
+    private GuideItem GuideLine(string key) => _viewModel.GuideItems.First(item => item.Key == key);
+
+    [Fact]
+    public void GamesListsEveryGameThenEachStore()
+    {
+        var viewModel = new MainViewModel(_client, [Game, Raid, Notes], _window);
+        _client.Connect();
+        viewModel.Tabs.First(tab => tab.Name == "Games").Command.Execute(null);
+
+        Assert.Equal(["All games", "Battle.net", "Steam"], viewModel.Rows.Select(row => row.Title));
+        Assert.Equal("All games", viewModel.SelectedSection);
+        Assert.Equal(["game", "raid"], viewModel.SectionTiles.Select(tile => tile.Key));
+
+        viewModel.ShowSection("Steam");
+        Assert.Equal(["game"], viewModel.SectionTiles.Select(tile => tile.Key));
+
+        // Focusing a tile that isn't showing switches to the first section that has it.
+        viewModel.RevealTile("raid");
+        Assert.Equal("All games", viewModel.SelectedSection);
+        viewModel.RevealTile("game");
+        Assert.Equal("All games", viewModel.SelectedSection);  // already showing: stays
+    }
+
+    [Fact]
+    public void GamesFromOneStoreDontRepeatTheList()
+    {
+        _client.Connect();
+        Open("Games");
+        Assert.Equal(["All games"], RowTitles());
+    }
+
+    [Fact]
+    public void SettingsAreGroupedIntoSections()
+    {
+        _client.Connect();
+        Open("Settings");
+        Assert.Equal(["Sound", "Controller", "Web apps", "Power"], RowTitles());
+        Assert.Equal("Sound", _viewModel.SelectedSection);
+    }
+
+    [Fact]
+    public void StartMenuOpensOnVolumeAndBackReturnsToTheTile()
+    {
+        _client.Connect();
+        _viewModel.OnTileFocused(Tile("game"));
+
+        _viewModel.GuideCommand.Execute(null);
+        Assert.True(_viewModel.IsGuideOpen);
+        Assert.False(_viewModel.IsBackgroundEnabled);
+        Assert.Equal("guide:volume", _focus.Last());
+
+        _viewModel.BackCommand.Execute(null);
+        Assert.False(_viewModel.IsGuideOpen);
+        Assert.True(_viewModel.IsBackgroundEnabled);
+        Assert.Equal("game", _focus.Last());
+    }
+
+    [Fact]
+    public void StartMenuShowsAndChangesTheCurrentSettings()
+    {
+        _client.Hashes["couch:volume"] = new() { ["percent"] = "40", ["muted"] = "0" };
+        _client.Connect();
+        _viewModel.GuideCommand.Execute(null);
+        Assert.Equal("40", GuideLine("guide:volume").Value);
+        Assert.Equal("Off", GuideLine("guide:mute").Value);
+        Assert.Equal("Soft", GuideLine("guide:sounds").Value);
+        Assert.Equal("Medium", GuideLine("guide:pointer").Value);
+
+        _client.Event("volume 55 1");
+        Assert.Equal("Muted", GuideLine("guide:volume").Value);
+        Assert.Equal("On", GuideLine("guide:mute").Value);
+        Assert.False(_viewModel.IsVolumeVisible);  // the menu shows it already
+
+        GuideLine("guide:sounds").Command.Execute(null);
+        Assert.Equal("Click", GuideLine("guide:sounds").Value);
+        GuideLine("guide:pointer").Command.Execute(null);
+        Assert.Equal("High", GuideLine("guide:pointer").Value);
+        Assert.Equal("100", _client.Hashes["couch:settings"]["pointerSpeed"]);
+        Assert.True(_viewModel.IsGuideOpen);
+    }
+
+    [Fact]
+    public void PowerFromTheStartMenuConfirmsThenClosesTheMenu()
+    {
+        _client.Connect();
+        _viewModel.OnTileFocused(Tile("notes"));
+        _viewModel.GuideCommand.Execute(null);
+
+        GuideLine("guide:sleep").Command.Execute(null);
+        Assert.True(_viewModel.IsConfirmOpen);
+        Assert.Equal("confirm:no", _focus.Last());
+        _viewModel.BackCommand.Execute(null);  // B closes the question, not the menu
+        Assert.False(_viewModel.IsConfirmOpen);
+        Assert.True(_viewModel.IsGuideOpen);
+        Assert.Equal("guide:sleep", _focus.Last());
+
+        GuideLine("guide:sleep").Command.Execute(null);
+        _viewModel.ConfirmYesCommand.Execute(null);
+        Assert.Equal("power sleep", _client.Published.Last());
+        Assert.False(_viewModel.IsGuideOpen);
+        Assert.Equal("notes", _focus.Last());
+    }
+
+    [Fact]
+    public void TheLatestRecentTileIsWideWithItsFullArtwork()
+    {
+        var art = Game with { Image = "header.jpg", Backdrop = "hero.jpg", TitleImage = "logo.png" };
+        var viewModel = new MainViewModel(_client, [art, Notes], _window);
+        _client.Lists["couch:recent"] = ["game", "notes"];
+        _client.Connect();
+
+        TileViewModel first = viewModel.Rows[0].Tiles[0];
+        Assert.True(first.IsWide);
+        Assert.Equal("hero.jpg", first.Image);
+        Assert.Equal("logo.png", first.TitleImage);
+        Assert.False(viewModel.Rows[0].Tiles[1].IsWide);
+        Assert.False(viewModel.Rows[1].Tiles[0].IsWide);  // All apps
+    }
+
+    [Fact]
+    public void TilesSayWhenTheyWereLastPlayed()
+    {
+        long now = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+        _client.Lists["couch:sessions"] = [$"game\t{now - 60000}\t{now}"];
+        _client.Connect();
+        Assert.Equal("Steam game  ·  Last played today", Tile("game").Description);
+        Assert.Equal("App", Tile("notes").Description);
+    }
+
+    [Theory]
+    [InlineData(0, "today")]
+    [InlineData(1, "yesterday")]
+    [InlineData(3, "3 days ago")]
+    public void LastPlayedDaysReadNaturally(int daysAgo, string expected)
+    {
+        var now = new DateTimeOffset(2026, 11, 3, 15, 0, 0, TimeSpan.FromHours(-5));
+        long end = now.AddDays(-daysAgo).ToUnixTimeMilliseconds();
+        Assert.Equal(expected, MainViewModel.DescribeDay(end, now));
+    }
+
+    [Fact]
+    public void LastPlayedOverAWeekAgoGivesTheDate()
+    {
+        var now = new DateTimeOffset(2026, 11, 3, 15, 0, 0, TimeSpan.FromHours(-5));
+        long end = now.AddDays(-12).ToUnixTimeMilliseconds();
+        Assert.Equal(now.AddDays(-12).ToString("MMM d", System.Globalization.CultureInfo.CurrentCulture), MainViewModel.DescribeDay(end, now));
+    }
+
     [Fact]
     public void ExitNeedsConfirmationAndSendsNoPowerRequest()
     {

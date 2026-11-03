@@ -58,6 +58,52 @@ public class GameLibrariesTests
     }
 
     [Fact]
+    public void ABattleNetGameKeepsItsOwnProgramForItsIcon()
+    {
+        var game = Assert.Single(GameLibraries.ParseBattleNet(
+        [
+            BattleNet,
+            new UninstallEntry("World of Warcraft", "World of Warcraft", "C:\\Games\\World of Warcraft",
+                "\"x\\Blizzard Uninstaller.exe\" --uid=wow", "C:\\Games\\World of Warcraft\\_retail_\\WoW.exe"),
+        ]));
+        Assert.Equal("C:\\Games\\World of Warcraft\\_retail_\\WoW.exe", game.Icon);
+        Assert.Equal("battlenet", game.Logo);  // kept until the icon is read, in case it can't be
+    }
+
+    [Theory]
+    [InlineData(30, true)]    // a faint shadow box: cleared
+    [InlineData(255, false)]  // solid edges are part of the picture: kept
+    public void IconsLoseOnlyAFaintFrame(byte edgeAlpha, bool cleared)
+    {
+        const int size = 16;
+        var pixels = new byte[size * size * 4];
+        for (int i = 0; i < size; i++)
+        {
+            pixels[i * 4 + 3] = edgeAlpha;  // the top row
+        }
+        pixels[(8 * size + 8) * 4 + 3] = 255;  // something solid in the middle
+        var icon = System.Windows.Media.Imaging.BitmapSource.Create(size, size, 96, 96,
+            System.Windows.Media.PixelFormats.Bgra32, null, pixels, size * 4);
+
+        var result = new byte[pixels.Length];
+        InstalledApps.WithoutFaintFrame(icon).CopyPixels(result, size * 4, 0);
+
+        Assert.Equal(cleared ? 0 : edgeAlpha, result[3]);
+        Assert.Equal(255, result[(8 * size + 8) * 4 + 3]);
+    }
+
+    [Theory]
+    [InlineData("\"C:\\Games\\x.exe\",0", "C:\\Games\\x.exe")]
+    [InlineData("C:/Games/x.exe", "C:\\Games\\x.exe")]
+    [InlineData("C:\\Launcher\\launcher.exe", null)]  // only the launcher's own icon
+    [InlineData("C:\\Games\\x.ico", null)]
+    [InlineData(null, null)]
+    public void GameProgramReadsTheDisplayIcon(string? displayIcon, string? expected)
+    {
+        Assert.Equal(expected, GameLibraries.GameProgram(displayIcon, "C:\\Launcher\\launcher.exe"));
+    }
+
+    [Fact]
     public void BattleNetGameWithAnUnknownCodeOpensItsPage()
     {
         var game = Assert.Single(GameLibraries.ParseBattleNet(

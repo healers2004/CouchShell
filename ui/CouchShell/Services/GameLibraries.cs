@@ -6,7 +6,8 @@ using Microsoft.Win32;
 namespace CouchShell.Services;
 
 // One entry from Windows' list of installed programs, which most launchers register games in.
-public sealed record UninstallEntry(string KeyName, string? DisplayName, string? InstallLocation, string? UninstallString);
+public sealed record UninstallEntry(string KeyName, string? DisplayName, string? InstallLocation, string? UninstallString,
+    string? DisplayIcon = null);
 
 // Finds games and launchers from outside Steam: Riot and Battle.net through Windows' installed
 // programs list, and Epic through its manifest files.
@@ -42,7 +43,17 @@ public static partial class GameLibraries
     public static List<AppDefinition> FindGames(Action<string> log)
     {
         List<UninstallEntry> entries = ReadUninstallEntries(log);
-        return [.. ParseRiot(entries), .. ParseBattleNet(entries), .. ScanEpic(log)];
+        List<AppDefinition> games = [.. ParseRiot(entries), .. ParseBattleNet(entries), .. ScanEpic(log)];
+        return games.Select(game => WithOwnIcon(game, log)).ToList();
+    }
+
+    // The game's own icon, from its program, in place of its launcher's logo. The logo stays if the
+    // icon can't be read.
+    private static AppDefinition WithOwnIcon(AppDefinition game, Action<string> log)
+    {
+        if (game.Icon == null) return game;
+        string? icon = File.Exists(game.Icon) ? InstalledApps.CachedFileIcon(game.Icon, log) : null;
+        return icon != null ? game with { Icon = icon, Logo = null } : game with { Icon = null };
     }
 
     // The launchers themselves, for browsing and installing from the couch.
@@ -73,6 +84,7 @@ public static partial class GameLibraries
             games.Add(new AppDefinition("riot-" + SafeId(product), Name(entry, product), "games", "exe", client,
                 Args: $"--launch-product={product} --launch-patchline=live",
                 Logo: "riot",
+                Icon: GameProgram(entry.DisplayIcon, client),
                 InstallFolder: entry.InstallLocation.Replace('/', '\\'),
                 Source: "Riot Games"));
         }
@@ -100,7 +112,8 @@ public static partial class GameLibraries
                 ? $"--exec=\"launch {code}\""
                 : $"--game={id}";
             games.Add(new AppDefinition("battlenet-" + SafeId(id), Name(entry, id), "games", "exe", program,
-                Args: args, Logo: "battlenet", InstallFolder: entry.InstallLocation, Source: "Battle.net"));
+                Args: args, Logo: "battlenet", Icon: GameProgram(entry.DisplayIcon, program),
+                InstallFolder: entry.InstallLocation, Source: "Battle.net"));
         }
         return games;
     }
@@ -126,12 +139,14 @@ public static partial class GameLibraries
             string? space = Text(root, "CatalogNamespace");
             string? item = Text(root, "CatalogItemId");
             string? folder = Text(root, "InstallLocation");
+            string? program = Text(root, "LaunchExecutable");
             if (name == null || app == null || space == null || item == null || folder == null) return null;
 
             string target = "com.epicgames.launcher://apps/" +
                 $"{Uri.EscapeDataString(space)}%3A{Uri.EscapeDataString(item)}%3A{Uri.EscapeDataString(app)}?action=launch&silent=true";
             return new AppDefinition("epic-" + SafeId(app), name, "games", "uri", target,
-                Logo: "epic", InstallFolder: folder.Replace('/', '\\'), Source: "Epic Games");
+                Logo: "epic", Icon: program == null ? null : Path.Combine(folder, program).Replace('/', '\\'),
+                InstallFolder: folder.Replace('/', '\\'), Source: "Epic Games");
         }
         catch (JsonException)
         {
@@ -167,6 +182,15 @@ public static partial class GameLibraries
     private static AppDefinition Launcher(string logo, string name, string program, string folder) =>
         new("launcher-" + logo, name, "apps", "exe", program, Logo: logo, Controller: "pointer",
             InstallFolder: folder, Source: "Game launcher", Watch: "window");
+
+    // DisplayIcon looks like "C:\Games\x.exe",0. Null when it's missing or is only the launcher's.
+    public static string? GameProgram(string? displayIcon, string launcher)
+    {
+        if (string.IsNullOrWhiteSpace(displayIcon)) return null;
+        string path = displayIcon.Split(',')[0].Trim().Trim('"').Replace('/', '\\');
+        if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return null;
+        return path.Equals(launcher.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase) ? null : path;
+    }
 
     private static string? RiotClient(List<UninstallEntry> entries)
     {
@@ -220,7 +244,8 @@ public static partial class GameLibraries
                     using RegistryKey? key = list.OpenSubKey(name);
                     if (key == null) continue;
                     entries.Add(new UninstallEntry(name, key.GetValue("DisplayName") as string,
-                        key.GetValue("InstallLocation") as string, key.GetValue("UninstallString") as string));
+                        key.GetValue("InstallLocation") as string, key.GetValue("UninstallString") as string,
+                        key.GetValue("DisplayIcon") as string));
                 }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)

@@ -41,6 +41,8 @@ public partial class MainWindow : Window
             // Only a person moving focus: when a screen rebuilds, Windows briefly moves focus
             // elsewhere by itself, and that mustn't switch screens.
             if (_isUserMovingFocus && e.NewFocus is Button { DataContext: TabViewModel tab }) ViewModel.ShowScreen(tab.Name);
+            // The same for a section in Games and Settings: moving onto it shows its contents.
+            if (e.NewFocus is Button { DataContext: TileRow section }) ViewModel.ShowSection(section.Title);
         };
 
         _controller = new ControllerService(Dispatcher);
@@ -88,7 +90,7 @@ public partial class MainWindow : Window
 
         _controller.SetWebSession(new WebInputSession(webStyle, ViewModel.PointerSpeed, Dispatcher, OnWebCommand));
         _overlay.ResetSelection();
-        _overlay.ShowHintFor(webStyle, ViewModel.CanLeaveRunningApp);
+        _overlay.ShowHintFor(webStyle, ViewModel.CanLeaveRunningApp, ViewModel.LaunchWaitingFor);
         UpdateOverlayVisibility();
     }
 
@@ -170,7 +172,11 @@ public partial class MainWindow : Window
         if (ViewModel.SoundPack != MainViewModel.SoundsOff) _sounds.Play(sound, ViewModel.SoundPack);
     }
 
-    private void UpdateClock() => Clock.Text = DateTime.Now.ToString("t", CultureInfo.CurrentCulture);
+    private void UpdateClock()
+    {
+        Clock.Text = DateTime.Now.ToString("t", CultureInfo.CurrentCulture);
+        GuideClock.Text = Clock.Text;
+    }
 
     // A focused tile scrolls its whole row into view, so the row's title stays visible. A row too
     // tall for the screen falls through to WPF's default, which scrolls to just the tile.
@@ -220,9 +226,52 @@ public partial class MainWindow : Window
     {
         if (Keyboard.FocusedElement is UIElement focused)
         {
-            // Going up from the tiles lands on the open screen's tab, rather than whichever tab
-            // happens to be nearest, which would switch screens.
-            if (direction == FocusNavigationDirection.Up && focused is Button { DataContext: TileViewModel } &&
+            // Left and right on the menu's volume line change the volume, like a slider.
+            if (focused is Button { Tag: "guide:volume" } &&
+                direction is FocusNavigationDirection.Left or FocusNavigationDirection.Right)
+            {
+                (direction == FocusNavigationDirection.Left ? ViewModel.VolumeDownCommand : ViewModel.VolumeUpCommand).Execute(null);
+                return;
+            }
+            if (direction == FocusNavigationDirection.Right && focused is Button { DataContext: TileRow })
+            {
+                PlaySound(UiSound.Move);
+                FocusTile(ViewModel.SectionTiles.FirstOrDefault()?.Key);
+                return;
+            }
+            // At an edge WPF wraps round to the far side. A console menu stops there instead.
+            if (focused.PredictFocus(direction) is UIElement next && IsBackwards(focused, next, direction)) return;
+            // On Games and Settings, down from the tabs goes to the section list first, and right
+            // from the contents never jumps back to it.
+            if (direction == FocusNavigationDirection.Down && focused is Button { DataContext: TabViewModel } && ViewModel.IsSectionScreen)
+            {
+                PlaySound(UiSound.Move);
+                FocusTile("section:" + ViewModel.SelectedSection);
+                return;
+            }
+            if (direction == FocusNavigationDirection.Right && focused is Button { DataContext: not TileRow } &&
+                focused.PredictFocus(direction) is Button { DataContext: TileRow })
+            {
+                return;
+            }
+            // The tabs are reached only by going up, and sideways from a tab stays on the tabs.
+            // WPF otherwise wraps round at the edges, and landing on a tab switches screens.
+            // Left from the contents of Games or Settings goes back to the section showing.
+            bool fromTab = focused is Button { DataContext: TabViewModel };
+            bool toTab = focused.PredictFocus(direction) is Button { DataContext: TabViewModel };
+            if ((!fromTab && toTab && direction != FocusNavigationDirection.Up) ||
+                (fromTab && !toTab && direction is FocusNavigationDirection.Left or FocusNavigationDirection.Right))
+            {
+                if (direction == FocusNavigationDirection.Left && ViewModel.IsSectionScreen && focused is Button { DataContext: not TileRow })
+                {
+                    PlaySound(UiSound.Move);
+                    FocusTile("section:" + ViewModel.SelectedSection);
+                }
+                return;
+            }
+            // Going up from the tiles or sections lands on the open screen's tab, rather than
+            // whichever tab happens to be nearest, which would switch screens.
+            if (direction == FocusNavigationDirection.Up && focused is Button { DataContext: not TabViewModel } &&
                 focused.PredictFocus(direction) is Button { DataContext: TabViewModel })
             {
                 PlaySound(UiSound.Move);
@@ -237,6 +286,21 @@ public partial class MainWindow : Window
         {
             FocusTile(null);
         }
+    }
+
+    // True when `to` isn't further in `direction` than `from`, comparing their centres on screen.
+    private bool IsBackwards(UIElement from, UIElement to, FocusNavigationDirection direction)
+    {
+        Point a = from.TranslatePoint(new Point(from.RenderSize.Width / 2, from.RenderSize.Height / 2), this);
+        Point b = to.TranslatePoint(new Point(to.RenderSize.Width / 2, to.RenderSize.Height / 2), this);
+        return direction switch
+        {
+            FocusNavigationDirection.Right => b.X <= a.X,
+            FocusNavigationDirection.Left => b.X >= a.X,
+            FocusNavigationDirection.Down => b.Y <= a.Y,
+            FocusNavigationDirection.Up => b.Y >= a.Y,
+            _ => false,
+        };
     }
 
     private void OnControllerAction(NavAction action)
@@ -285,6 +349,10 @@ public partial class MainWindow : Window
             case NavAction.Mute:
                 ViewModel.MuteCommand.Execute(null);
                 break;
+            case NavAction.Menu:
+                PlaySound(UiSound.Select);
+                ViewModel.GuideCommand.Execute(null);
+                break;
         }
     }
 
@@ -292,9 +360,11 @@ public partial class MainWindow : Window
     // Queued at low priority, because new tiles don't exist until WPF has laid them out.
     private void FocusTile(string? key)
     {
+        ViewModel.RevealTile(key);
         Dispatcher.InvokeAsync(() =>
         {
-            List<Button> buttons = FindButtons(this).ToList();
+            // Hidden screens' buttons are still in the tree, so only visible ones count.
+            List<Button> buttons = FindButtons(this).Where(button => button.IsVisible).ToList();
             Button? target = key == null ? null : buttons.Find(button => Equals(button.Tag, key));
             target ??= buttons.Find(button => button.Tag is string tag && !tag.StartsWith("tab:") && !tag.StartsWith("confirm:") && !tag.StartsWith("key:"));
             target ??= buttons.Find(button => Equals(button.Tag, "tab:" + ViewModel.CurrentScreen));

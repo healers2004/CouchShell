@@ -264,6 +264,16 @@ public class OverlayViewModelTests
     }
 
     [Fact]
+    public void TheWaitingBarNamesTheLauncher()
+    {
+        var overlay = new OverlayViewModel();
+        overlay.ShowHintFor(WebControlStyle.WaitingForLaunch, waitingFor: "Battle.net");
+        Assert.StartsWith("Waiting for Battle.net", overlay.Hint);
+        overlay.ShowHintFor(WebControlStyle.WaitingForLaunch);
+        Assert.StartsWith("Waiting for the app", overlay.Hint);
+    }
+
+    [Fact]
     public void ControlsBarStepsAsideForTheKeyboardAndComesBack()
     {
         var overlay = new OverlayViewModel();

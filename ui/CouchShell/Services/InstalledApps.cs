@@ -71,7 +71,13 @@ public static class InstalledApps
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16].ToLowerInvariant();
 
     // Icons are saved as files, so they load quickly next time and tiles can show them by path.
-    private static string? CachedIcon(string path, Action<string> log)
+    private static string? CachedIcon(string path, Action<string> log) => CachedIcon(AppsFolder + path, path, log);
+
+    // The icon of a program file, for games found outside the All apps list.
+    public static string? CachedFileIcon(string program, Action<string> log) => CachedIcon(program, program, log);
+
+    // The shell reads the icon from anything it can name: an All apps entry or a file path.
+    private static string? CachedIcon(string shellName, string path, Action<string> log)
     {
         string folder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CouchShell", "icons");
@@ -80,11 +86,11 @@ public static class InstalledApps
 
         try
         {
-            BitmapSource? icon = WindowsNative.GetShellIcon(AppsFolder + path, IconSize);
+            BitmapSource? icon = WindowsNative.GetShellIcon(shellName, IconSize);
             if (icon == null) return null;
             Directory.CreateDirectory(folder);
             var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(icon));
+            encoder.Frames.Add(BitmapFrame.Create(WithoutFaintFrame(icon)));
             using FileStream stream = File.Create(file);
             encoder.Save(stream);
             return file;
@@ -94,5 +100,42 @@ public static class InstalledApps
             log($"Could not save an app icon: {e.Message}");
             return null;  // the tile shows the app's first letter instead
         }
+    }
+
+    private const int FrameWidth = 3;
+    private const byte FaintAlpha = 80;
+
+    // Some icons (World of Warcraft's, for one) have a faint shadow box around their edges, which
+    // shows as a square on a tile. A border that is faint all the way round is cleared. One with
+    // anything solid in it is part of the picture, and stays.
+    public static BitmapSource WithoutFaintFrame(BitmapSource icon)
+    {
+        var converted = new FormatConvertedBitmap(icon, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+        int width = converted.PixelWidth, height = converted.PixelHeight, stride = width * 4;
+        if (width <= FrameWidth * 2 || height <= FrameWidth * 2) return icon;
+        var pixels = new byte[stride * height];
+        converted.CopyPixels(pixels, stride, 0);
+
+        bool InFrame(int x, int y) => x < FrameWidth || y < FrameWidth || x >= width - FrameWidth || y >= height - FrameWidth;
+        bool hasFrame = false;
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!InFrame(x, y)) continue;
+                byte alpha = pixels[y * stride + x * 4 + 3];
+                if (alpha >= FaintAlpha) return icon;
+                hasFrame |= alpha > 0;
+            }
+        }
+        if (!hasFrame) return icon;
+
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+                if (InFrame(x, y)) Array.Clear(pixels, y * stride + x * 4, 4);
+        BitmapSource cleaned = BitmapSource.Create(width, height, icon.DpiX, icon.DpiY,
+            System.Windows.Media.PixelFormats.Bgra32, null, pixels, stride);
+        cleaned.Freeze();
+        return cleaned;
     }
 }

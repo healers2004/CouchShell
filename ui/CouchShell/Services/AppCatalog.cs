@@ -23,7 +23,8 @@ public sealed record AppDefinition(
     string? Source = null,
     string? Watch = null,
     string? Icon = null,
-    string? Requires = null)
+    string? Requires = null,
+    string? TitleImage = null)  // the game's name drawn as a logo, shown over its artwork
 {
     // As stored in the app:<id> hash in Tachyon. Empty optional fields are left out.
     public IEnumerable<string> ToHashFields()
@@ -31,7 +32,7 @@ public sealed record AppDefinition(
         string[] fields = ["id", Id, "name", Name, "category", Category, "type", Type, "target", Target];
         foreach (string field in fields) yield return field;
         foreach ((string name, string? value) in new[] { ("args", Args), ("processName", ProcessName), ("image", Image), ("controller", Controller), ("userAgent", UserAgent),
-            ("backdrop", Backdrop), ("logo", Logo), ("color", Color), ("window", Window), ("installFolder", InstallFolder), ("source", Source), ("watch", Watch), ("icon", Icon) })
+            ("backdrop", Backdrop), ("logo", Logo), ("color", Color), ("window", Window), ("installFolder", InstallFolder), ("source", Source), ("watch", Watch), ("icon", Icon), ("titleImage", TitleImage) })
         {
             if (string.IsNullOrEmpty(value)) continue;
             yield return name;
@@ -60,7 +61,8 @@ public sealed record AppDefinition(
             fields.GetValueOrDefault("installFolder"),
             fields.GetValueOrDefault("source"),
             fields.GetValueOrDefault("watch"),
-            fields.GetValueOrDefault("icon"));
+            fields.GetValueOrDefault("icon"),
+            TitleImage: fields.GetValueOrDefault("titleImage"));
     }
 
     // How the controller drives this app, if it's a web app. Games read the controller themselves.
