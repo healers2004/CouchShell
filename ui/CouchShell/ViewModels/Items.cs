@@ -36,8 +36,7 @@ public sealed record TileViewModel(
     string? Description = null,
     string? ActionLabel = null,
     string? IconPath = null,
-    string? TitleImage = null,
-    bool IsWide = false)  // the first tile on Home: twice as wide, showing the game's artwork
+    string? TitleImage = null)
 {
     public string? Monogram =>
         Image == null && LogoPath == null && Glyph == null && IconPath == null && Title.Length > 0 ? Title[..1].ToUpperInvariant() : null;

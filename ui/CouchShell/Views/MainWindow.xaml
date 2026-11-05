@@ -147,7 +147,7 @@
         </Style>
 
         <!-- A tile: picture on top, title underneath. On focus the picture grows a little and gains
-             a thick white outline, and the title brightens. The first tile on Home is twice as wide. -->
+             a thick white outline, and the title brightens. -->
         <Style x:Key="TileButton" TargetType="Button">
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Margin" Value="0,0,24,0" />
@@ -169,9 +169,6 @@
                                        Visibility="{Binding Subtitle, Converter={StaticResource CollapsedWhenNull}}" />
                         </StackPanel>
                         <ControlTemplate.Triggers>
-                            <DataTrigger Binding="{Binding IsWide}" Value="True">
-                                <Setter TargetName="Frame" Property="Width" Value="744" />
-                            </DataTrigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
                                 <Setter TargetName="Card" Property="BorderBrush" Value="White" />
                                 <Setter TargetName="Caption" Property="Foreground" Value="White" />

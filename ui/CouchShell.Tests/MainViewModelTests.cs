@@ -628,7 +628,7 @@ public class MainViewModelTests
     }
 
     [Fact]
-    public void TheLatestRecentTileIsWideWithItsFullArtwork()
+    public void TilesKeepTheirArtworkAndTheGameLogoForThePreview()
     {
         var art = Game with { Image = "header.jpg", Backdrop = "hero.jpg", TitleImage = "logo.png" };
         var viewModel = new MainViewModel(_client, [art, Notes], _window);
@@ -636,11 +636,9 @@ public class MainViewModelTests
         _client.Connect();
 
         TileViewModel first = viewModel.Rows[0].Tiles[0];
-        Assert.True(first.IsWide);
-        Assert.Equal("hero.jpg", first.Image);
+        Assert.Equal("header.jpg", first.Image);  // the same picture as everywhere else
+        Assert.Equal("hero.jpg", first.Backdrop);
         Assert.Equal("logo.png", first.TitleImage);
-        Assert.False(viewModel.Rows[0].Tiles[1].IsWide);
-        Assert.False(viewModel.Rows[1].Tiles[0].IsWide);  // All apps
     }
 
     [Fact]

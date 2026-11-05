@@ -710,14 +710,6 @@ public class MainViewModel : ViewModelBase
             .OfType<AppDefinition>()
             .Take(RecentTiles);
         AddAppRow("Recently used", recent);
-        // The latest one leads, wider, with its full artwork when it has some.
-        if (Rows.Count > 0 && Rows[0].Title == "Recently used")
-        {
-            List<TileViewModel> tiles = [.. Rows[0].Tiles];
-            AppDefinition? first = FindApp(tiles[0].Key);
-            tiles[0] = tiles[0] with { IsWide = true, Image = first?.Backdrop ?? tiles[0].Image };
-            Rows[0] = Rows[0] with { Tiles = tiles };
-        }
     }
 
     private void AddAppRow(string title, IEnumerable<AppDefinition> apps)
