@@ -20,10 +20,19 @@ public sealed class ControllerService : IDisposable
     private readonly CancellationTokenSource _stop = new();
     private Task? _loop;
 
+    // The controller's raw reports, for while an app is in front (see WindowsNative). Null if
+    // Windows refused; XInput is still read either way.
+    private readonly WindowsNative.RawGamepad? _raw;
     // Raised on the UI thread.
     public event Action<NavAction>? ActionPressed;
 
-    public ControllerService(Dispatcher dispatcher) => _dispatcher = dispatcher;
+    // Must be created on the UI thread: Raw Input arrives through a window that belongs to it.
+    public ControllerService(Dispatcher dispatcher)
+    {
+        _dispatcher = dispatcher;
+        _raw = WindowsNative.RawGamepad.TryStart();
+        if (_raw == null) AppLog.Write("Raw controller input is unavailable; inside apps the controller may not respond.");
+    }
 
     // While set, the controller drives the web app instead of CouchShell's menus. volatile: it's
     // set on the UI thread and read on the polling thread.
@@ -35,17 +44,13 @@ public sealed class ControllerService : IDisposable
 
     private async Task PollLoopAsync(CancellationToken token)
     {
-        // GameInput when it's installed, because then XInput blanks the controller while an app is
-        // in front. XInput otherwise.
-        using WindowsNative.GameInputGamepad? gameInput = WindowsNative.GameInputGamepad.TryCreate();
-        AppLog.Write($"Reading the controller through {(gameInput != null ? "GameInput" : "XInput")}");
         var clock = Stopwatch.StartNew();
         int slot = -1;  // XInput slot of the controller in use, or -1 when none is connected
         WebInputSession? runningSession = null;
 
         while (!token.IsCancellationRequested)
         {
-            if (slot < 0 && gameInput == null)
+            if (slot < 0)
             {
                 slot = FindController();
                 if (slot >= 0) Debug.WriteLine($"Controller connected in slot {slot}");
@@ -63,10 +68,14 @@ public sealed class ControllerService : IDisposable
 
             TimeSpan delay;
             WindowsNative.XInputGamepad pad = default;
-            bool connected = gameInput != null
-                ? gameInput.TryRead(out pad)
-                : slot >= 0 && WindowsNative.TryGetGamepad(slot, out pad);
-            if (gameInput != null) slot = connected ? 0 : -1;  // GameInput merges every gamepad into one
+            bool connected = slot >= 0 && WindowsNative.TryGetGamepad(slot, out pad);
+            // Inside an app XInput may read as all zeros, so the raw reports count too. Combining
+            // them works whether or not this Windows blanks XInput.
+            if (session != null && _raw?.Current is WindowsNative.XInputGamepad raw)
+            {
+                pad = WindowsNative.Combine([pad, raw]);
+                connected = true;
+            }
             if (connected)
             {
                 if (session != null)
@@ -126,5 +135,6 @@ public sealed class ControllerService : IDisposable
             // The loop ended with an error; there's nothing left to stop.
         }
         _stop.Dispose();
+        _raw?.Dispose();
     }
 }

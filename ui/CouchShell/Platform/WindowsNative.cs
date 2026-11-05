@@ -1,4 +1,3 @@
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -48,156 +47,246 @@ internal static class WindowsNative
         return connected;
     }
 
-    // ---- GameInput ----
-    // Where Microsoft's GameInput is installed (the Xbox app and many games install it), XInput runs
-    // on top of it and hands apps in the background a controller with nothing pressed. CouchShell is
-    // in the background while an app is open, so it reads GameInput itself, which can be asked for
-    // background input. Its interfaces are COM-style: an object is a pointer to a table of function
-    // pointers, and the indexes below are the methods' positions in GameInput.h (version 4).
+    // ---- Raw Input: the controller while another app is in front ----
+    // On recent Windows (where Microsoft's GameInput is installed) XInput gives apps in the
+    // background a controller with nothing pressed. CouchShell is in the background while an app is
+    // open, so then it reads the controller's raw HID reports instead: Raw Input with INPUTSINK
+    // still delivers them to a window that isn't in front. The HidP_ functions decode a report using
+    // the layout the device describes ("preparsed data"), so there's no byte-level guessing.
 
-    private const string GameInputDll = @"Microsoft GameInput\x64\GameInputRedist.dll";
-    private static readonly Guid GameInputV4 = new("F2DAAE4C-4D21-4250-8953-4F791E6279AB");
-    private const uint GameInputKindGamepad = 0x00040000;
-    private const int ReleaseMethod = 2;                // IUnknown::Release
-    private const int GetCurrentReadingMethod = 4;      // IGameInput
-    private const int EnableBackgroundInputMethod = 13; // IGameInput
-    private const int GetGamepadStateMethod = 18;       // IGameInputReading
+    private const int WmInput = 0x00FF;
+    private const uint RidInput = 0x10000003;
+    private const uint RidiPreparsedData = 0x20000005;
+    private const uint RideviceInputSink = 0x00000100;
+    private const ushort GenericDesktopPage = 0x01;
+    private const ushort ButtonPage = 0x09;
+    private const ushort JoystickUsage = 0x04;
+    private const ushort GamepadUsage = 0x05;
+    private const ushort UsageX = 0x30, UsageY = 0x31, UsageRx = 0x33, UsageRy = 0x34, UsageHat = 0x39;
+    private const int HidpInput = 0;
+    private const int HidpStatusSuccess = 0x00110000;
+    private const int MaxButtons = 32;
 
-    // GameInputGamepadState: buttons, then triggers 0..1 and sticks -1..1.
     [StructLayout(LayoutKind.Sequential)]
-    internal struct GameInputGamepadState
+    private struct RawInputDevice
     {
-        public uint Buttons;
-        public float LeftTrigger;
-        public float RightTrigger;
-        public float LeftX;
-        public float LeftY;
-        public float RightX;
-        public float RightY;
+        public ushort UsagePage;
+        public ushort Usage;
+        public uint Flags;
+        public IntPtr Target;
     }
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int GameInputInitializeFn(ref Guid interfaceId, out IntPtr gameInput);
-
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int GetCurrentReadingFn(IntPtr self, uint kind, IntPtr device, out IntPtr reading);
-
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate void EnableBackgroundInputFn(IntPtr self, [MarshalAs(UnmanagedType.U1)] bool enable);
-
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    [return: MarshalAs(UnmanagedType.U1)]
-    private delegate bool GetGamepadStateFn(IntPtr self, out GameInputGamepadState state);
-
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate uint ReleaseFn(IntPtr self);
-
-    // The function at `index` in a COM-style object's table.
-    private static T Method<T>(IntPtr instance, int index) where T : Delegate =>
-        Marshal.GetDelegateForFunctionPointer<T>(Marshal.ReadIntPtr(Marshal.ReadIntPtr(instance), index * IntPtr.Size));
-
-    // One GameInput connection, kept for the life of the controller service. Used from one thread.
-    public sealed class GameInputGamepad : IDisposable
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RawInputHeader
     {
-        private IntPtr _gameInput;
-        private readonly GetCurrentReadingFn _getCurrentReading;
-        private GetGamepadStateFn? _getGamepadState;
-        private ReleaseFn? _releaseReading;
-
-        private GameInputGamepad(IntPtr gameInput)
-        {
-            _gameInput = gameInput;
-            _getCurrentReading = Method<GetCurrentReadingFn>(gameInput, GetCurrentReadingMethod);
-            Method<EnableBackgroundInputFn>(gameInput, EnableBackgroundInputMethod)(gameInput, true);
-        }
-
-        // Null when GameInput version 4 or later isn't installed; XInput is fine there.
-        public static GameInputGamepad? TryCreate()
-        {
-            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), GameInputDll);
-            if (!File.Exists(path) || !NativeLibrary.TryLoad(path, out IntPtr module) ||
-                !NativeLibrary.TryGetExport(module, "GameInputInitialize", out IntPtr initialize))
-            {
-                return null;
-            }
-            Guid version = GameInputV4;
-            // A non-zero HRESULT means this copy doesn't offer version 4.
-            int result = Marshal.GetDelegateForFunctionPointer<GameInputInitializeFn>(initialize)(ref version, out IntPtr gameInput);
-            return result == 0 && gameInput != IntPtr.Zero ? new GameInputGamepad(gameInput) : null;
-        }
-
-        // The latest state of any connected gamepad, in XInput's form. False when none is connected.
-        public bool TryRead(out XInputGamepad gamepad)
-        {
-            gamepad = default;
-            if (_gameInput == IntPtr.Zero || _getCurrentReading(_gameInput, GameInputKindGamepad, IntPtr.Zero, out IntPtr reading) != 0)
-            {
-                return false;  // GAMEINPUT_E_READING_NOT_FOUND: no gamepad
-            }
-            try
-            {
-                // Every reading shares one function table, so these are looked up once.
-                _getGamepadState ??= Method<GetGamepadStateFn>(reading, GetGamepadStateMethod);
-                _releaseReading ??= Method<ReleaseFn>(reading, ReleaseMethod);
-                if (!_getGamepadState(reading, out GameInputGamepadState state)) return false;
-                gamepad = ToXInput(state);
-                return true;
-            }
-            finally
-            {
-                _releaseReading?.Invoke(reading);
-            }
-        }
-
-        public void Dispose()
-        {
-            if (_gameInput == IntPtr.Zero) return;
-            Method<ReleaseFn>(_gameInput, ReleaseMethod)(_gameInput);
-            _gameInput = IntPtr.Zero;
-        }
+        public uint Type;
+        public uint Size;
+        public IntPtr Device;
+        public IntPtr WParam;
     }
 
-    // GameInput's button bits, in the order XInput's bits are listed in ControllerInputMapper.
-    private static readonly (uint GameInput, ushort XInput)[] ButtonMap =
-    [
-        (0x00000040, 0x0001), // D-pad up
-        (0x00000080, 0x0002), // D-pad down
-        (0x00000100, 0x0004), // D-pad left
-        (0x00000200, 0x0008), // D-pad right
-        (0x00000001, 0x0010), // Menu (Start)
-        (0x00000002, 0x0020), // View (Back)
-        (0x00001000, 0x0040), // left stick press
-        (0x00002000, 0x0080), // right stick press
-        (0x00000400, 0x0100), // LB
-        (0x00000800, 0x0200), // RB
-        (0x00000004, 0x1000), // A
-        (0x00000008, 0x2000), // B
-        (0x00000010, 0x4000), // X
-        (0x00000020, 0x8000), // Y
-    ];
+    // HIDP_VALUE_CAPS, of which only these fields are read. The rest is padding up to 72 bytes.
+    [StructLayout(LayoutKind.Explicit, Size = 72)]
+    private struct HidValueCaps
+    {
+        [FieldOffset(18)] public ushort BitSize;
+        [FieldOffset(40)] public int LogicalMin;
+        [FieldOffset(44)] public int LogicalMax;
+    }
 
-    // GameInput's state in XInput's form, so the rest of CouchShell needn't know which one it came
-    // from. Both use positive Y for up.
-    internal static XInputGamepad ToXInput(GameInputGamepadState state)
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool RegisterRawInputDevices(RawInputDevice[] devices, uint count, uint size);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetRawInputData(IntPtr rawInput, uint command, byte[]? data, ref uint size, uint headerSize);
+
+    [DllImport("user32.dll", EntryPoint = "GetRawInputDeviceInfoW")]
+    private static extern uint GetRawInputDeviceInfo(IntPtr device, uint command, byte[]? data, ref uint size);
+
+    [DllImport("hid.dll")]
+    private static extern int HidP_GetUsages(int reportType, ushort usagePage, ushort linkCollection,
+        [Out] ushort[] usages, ref uint usageCount, byte[] preparsedData, byte[] report, uint reportLength);
+
+    [DllImport("hid.dll")]
+    private static extern int HidP_GetUsageValue(int reportType, ushort usagePage, ushort linkCollection, ushort usage,
+        out uint value, byte[] preparsedData, byte[] report, uint reportLength);
+
+    [DllImport("hid.dll")]
+    private static extern int HidP_GetSpecificValueCaps(int reportType, ushort usagePage, ushort linkCollection, ushort usage,
+        [Out] HidValueCaps[] caps, ref ushort capsCount, byte[] preparsedData);
+
+    // Receives the controller's raw reports on a hidden window and keeps the latest state of each
+    // controller. Created and fed on the UI thread; Current can be read from any thread.
+    public sealed class RawGamepad : IDisposable
+    {
+        private readonly HwndSource _window;
+        private readonly Dictionary<IntPtr, byte[]?> _layouts = [];  // per device; null: not a usable gamepad
+        private readonly Dictionary<IntPtr, XInputGamepad> _states = [];
+        private readonly object _gate = new();
+
+        private RawGamepad(HwndSource window)
+        {
+            _window = window;
+            _window.AddHook(OnMessage);
+        }
+
+        // Null if Windows won't register for raw controller input.
+        public static RawGamepad? TryStart()
+        {
+            // Never shown: it exists only to receive WM_INPUT.
+            var window = new HwndSource(new HwndSourceParameters("CouchShell controller") { Width = 0, Height = 0, WindowStyle = 0 });
+            RawInputDevice[] devices =
+            [
+                new() { UsagePage = GenericDesktopPage, Usage = GamepadUsage, Flags = RideviceInputSink, Target = window.Handle },
+                new() { UsagePage = GenericDesktopPage, Usage = JoystickUsage, Flags = RideviceInputSink, Target = window.Handle },
+            ];
+            if (RegisterRawInputDevices(devices, (uint)devices.Length, (uint)Marshal.SizeOf<RawInputDevice>()))
+            {
+                return new RawGamepad(window);
+            }
+            window.Dispose();
+            return null;
+        }
+
+        // Every controller's latest state combined, or null before any report has arrived.
+        public XInputGamepad? Current
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _states.Count == 0 ? null : Combine(_states.Values);
+                }
+            }
+        }
+
+        private IntPtr OnMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (message == WmInput) Read(lParam);
+            return IntPtr.Zero;  // DefWindowProc still runs, as Raw Input requires
+        }
+
+        private void Read(IntPtr rawInput)
+        {
+            uint headerSize = (uint)Marshal.SizeOf<RawInputHeader>();
+            uint size = 0;
+            GetRawInputData(rawInput, RidInput, null, ref size, headerSize);
+            var data = new byte[size];
+            if (size == 0 || GetRawInputData(rawInput, RidInput, data, ref size, headerSize) != size) return;
+
+            IntPtr device = MemoryMarshal.Read<IntPtr>(data.AsSpan(8));  // RAWINPUTHEADER.hDevice
+            // RAWHID follows the header: report size, report count, then the reports. The last is newest.
+            int reportSize = BitConverter.ToInt32(data, (int)headerSize);
+            int reportCount = BitConverter.ToInt32(data, (int)headerSize + 4);
+            if (reportSize <= 0 || reportCount <= 0) return;
+            byte[] report = data.AsSpan((int)headerSize + 8 + (reportCount - 1) * reportSize, reportSize).ToArray();
+
+            byte[]? layout = Layout(device);
+            if (layout == null) return;
+            XInputGamepad state = Decode(layout, report);
+            lock (_gate) _states[device] = state;
+        }
+
+        private byte[]? Layout(IntPtr device)
+        {
+            if (_layouts.TryGetValue(device, out byte[]? known)) return known;
+            uint size = 0;
+            GetRawInputDeviceInfo(device, RidiPreparsedData, null, ref size);
+            byte[]? layout = new byte[size];
+            if (size == 0 || GetRawInputDeviceInfo(device, RidiPreparsedData, layout, ref size) != size) layout = null;
+            _layouts[device] = layout;
+            return layout;
+        }
+
+        public void Dispose() => _window.Dispose();
+    }
+
+    // Decodes one report with the standard layout Windows gives Xbox-style controllers.
+    private static XInputGamepad Decode(byte[] layout, byte[] report)
+    {
+        var pressed = new ushort[MaxButtons];
+        uint count = MaxButtons;
+        if (HidP_GetUsages(HidpInput, ButtonPage, 0, pressed, ref count, layout, report, (uint)report.Length) != HidpStatusSuccess) count = 0;
+
+        float Axis(ushort usage)
+        {
+            if (HidP_GetUsageValue(HidpInput, GenericDesktopPage, 0, usage, out uint value, layout, report, (uint)report.Length) != HidpStatusSuccess) return 0;
+            (int min, int max) = Range(layout, usage);
+            return max > min ? Math.Clamp((value - min) * 2f / (max - min) - 1f, -1f, 1f) : 0;
+        }
+
+        int? hat = null;
+        if (HidP_GetUsageValue(HidpInput, GenericDesktopPage, 0, UsageHat, out uint hatValue, layout, report, (uint)report.Length) == HidpStatusSuccess)
+        {
+            (int min, _) = Range(layout, UsageHat);
+            hat = (int)hatValue - min;
+        }
+        // HID's Y axes grow downwards; XInput's grow upwards.
+        return FromHid(pressed.AsSpan(0, (int)count), hat, Axis(UsageX), -Axis(UsageY), Axis(UsageRx), -Axis(UsageRy));
+    }
+
+    // The value range a device declares for one control. A declared maximum below the minimum means
+    // the field is unsigned and its top bit was read as a sign, so the bit size gives the real range.
+    private static (int Min, int Max) Range(byte[] layout, ushort usage)
+    {
+        var caps = new HidValueCaps[1];
+        ushort count = 1;
+        if (HidP_GetSpecificValueCaps(HidpInput, GenericDesktopPage, 0, usage, caps, ref count, layout) != HidpStatusSuccess || count == 0)
+        {
+            return (0, 0);
+        }
+        HidValueCaps cap = caps[0];
+        return cap.LogicalMax >= cap.LogicalMin ? (cap.LogicalMin, cap.LogicalMax) : (0, (int)((1L << cap.BitSize) - 1));
+    }
+
+    // Button numbers in the layout Windows gives Xbox-style controllers, as XInput bits:
+    // 1 A, 2 B, 3 X, 4 Y, 5 LB, 6 RB, 7 View, 8 Menu, 9 left stick, 10 right stick.
+    private static readonly ushort[] HidButtonBits = [0x1000, 0x2000, 0x4000, 0x8000, 0x0100, 0x0200, 0x0020, 0x0010, 0x0040, 0x0080];
+
+    // The D-pad is a hat switch: 0 up, then clockwise in eighths; anything else is centred.
+    private static readonly ushort[] HatBits = [0x0001, 0x0001 | 0x0008, 0x0008, 0x0002 | 0x0008, 0x0002, 0x0002 | 0x0004, 0x0004, 0x0001 | 0x0004];
+
+    // A decoded report in XInput's form, so the rest of CouchShell needn't know where it came from.
+    // Sticks are -1..1 with up positive.
+    internal static XInputGamepad FromHid(ReadOnlySpan<ushort> pressedButtons, int? hat, float leftX, float leftY, float rightX, float rightY)
     {
         ushort buttons = 0;
-        foreach ((uint gameInput, ushort xInput) in ButtonMap)
+        foreach (ushort number in pressedButtons)
         {
-            if ((state.Buttons & gameInput) != 0) buttons |= xInput;
+            if (number >= 1 && number <= HidButtonBits.Length) buttons |= HidButtonBits[number - 1];
         }
+        if (hat is >= 0 and < 8) buttons |= HatBits[hat.Value];
         return new XInputGamepad
         {
             Buttons = buttons,
-            LeftTrigger = (byte)Math.Round(Math.Clamp(state.LeftTrigger, 0f, 1f) * 255),
-            RightTrigger = (byte)Math.Round(Math.Clamp(state.RightTrigger, 0f, 1f) * 255),
-            ThumbLX = Axis(state.LeftX),
-            ThumbLY = Axis(state.LeftY),
-            ThumbRX = Axis(state.RightX),
-            ThumbRY = Axis(state.RightY),
+            ThumbLX = Scale(leftX),
+            ThumbLY = Scale(leftY),
+            ThumbRX = Scale(rightX),
+            ThumbRY = Scale(rightY),
         };
     }
 
-    private static short Axis(float value) => (short)Math.Round(Math.Clamp(value, -1f, 1f) * short.MaxValue);
+    // Several controllers at once: any button held on any of them, and each stick as pushed furthest.
+    internal static XInputGamepad Combine(IEnumerable<XInputGamepad> pads)
+    {
+        var combined = new XInputGamepad();
+        foreach (XInputGamepad pad in pads)
+        {
+            combined.Buttons |= pad.Buttons;
+            combined.LeftTrigger = Math.Max(combined.LeftTrigger, pad.LeftTrigger);
+            combined.RightTrigger = Math.Max(combined.RightTrigger, pad.RightTrigger);
+            combined.ThumbLX = Furthest(combined.ThumbLX, pad.ThumbLX);
+            combined.ThumbLY = Furthest(combined.ThumbLY, pad.ThumbLY);
+            combined.ThumbRX = Furthest(combined.ThumbRX, pad.ThumbRX);
+            combined.ThumbRY = Furthest(combined.ThumbRY, pad.ThumbRY);
+        }
+        return combined;
+    }
+
+    private static short Furthest(short a, short b) => Math.Abs((int)b) > Math.Abs((int)a) ? b : a;
+
+    private static short Scale(float value) => (short)Math.Round(Math.Clamp(value, -1f, 1f) * short.MaxValue);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
