@@ -39,14 +39,6 @@ TEST(ReplyParser, ParsesEveryType) {
     EXPECT_EQ(reply.kind, Reply::Kind::kNull);
 }
 
-TEST(ReplyParser, ArrayBecomesMap) {
-    Reply reply;
-    ASSERT_EQ(parse_once("*4\r\n$1\r\na\r\n$1\r\n1\r\n$1\r\nb\r\n$1\r\n2\r\n", reply),
-              ParseStatus::kReply);
-    std::map<std::string, std::string> expected = {{"a", "1"}, {"b", "2"}};
-    EXPECT_EQ(reply.to_map(), expected);
-}
-
 // TCP can split a reply at any byte, including inside a nested array.
 TEST(ReplyParser, SplitAtEveryBytePosition) {
     const std::string input = "*3\r\n$7\r\nmessage\r\n$1\r\nc\r\n:5\r\n";

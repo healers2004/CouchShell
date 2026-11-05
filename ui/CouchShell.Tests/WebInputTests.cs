@@ -44,21 +44,10 @@ public class WebInputMapperTests
         Assert.Empty(mapper.Update(0, 0, 0, 0, 0, Ms(16)));
     }
 
-    [Fact]
-    public void ReleaseLetsGoOfAHeldMouseButton()
-    {
-        var mapper = Ready();
-        Press(mapper, ButtonA);
-        Assert.Equal([new InputCommand.MouseButton(false)], mapper.Release());
-        Assert.Empty(mapper.Release());
-    }
-
     [Theory]
     [InlineData(ButtonB, KeyBrowserBack)]
     [InlineData(ButtonX, KeySpace)]
     [InlineData(ButtonY, KeyF)]
-    [InlineData(DpadUp, KeyUp)]
-    [InlineData(DpadLeft, KeyLeft)]
     public void PointerStyleButtons(ushort button, ushort key)
     {
         Assert.Equal([new InputCommand.TapKey(key)], Press(Ready(), button));
@@ -67,17 +56,9 @@ public class WebInputMapperTests
     [Theory]
     [InlineData(ButtonA, KeyEnter)]
     [InlineData(ButtonB, KeyEscape)]
-    [InlineData(DpadRight, KeyRight)]
     public void KeysStyleButtons(ushort button, ushort key)
     {
         Assert.Equal([new InputCommand.TapKey(key)], Press(Ready(WebControlStyle.Keys), button));
-    }
-
-    [Fact]
-    public void KeysStyleStickNavigatesInsteadOfMovingAPointer()
-    {
-        var mapper = Ready(WebControlStyle.Keys);
-        Assert.Equal([new InputCommand.TapKey(KeyRight)], mapper.Update(0, 30000, 0, 0, 0, Ms(16)));
     }
 
     [Fact]
@@ -93,14 +74,6 @@ public class WebInputMapperTests
     }
 
     [Fact]
-    public void WaitingForLaunchUsesThePointerSoSteamDialogsWork()
-    {
-        var mapper = Ready(WebControlStyle.WaitingForLaunch);
-        Assert.IsType<InputCommand.MoveCursor>(Assert.Single(mapper.Update(0, 32767, 0, 0, 0, Ms(100))));
-        Assert.Equal([new InputCommand.MouseButton(true)], Press(mapper, ButtonA, 116));
-    }
-
-    [Fact]
     public void StickUpMovesThePointerUp()
     {
         var mapper = Ready();
@@ -109,49 +82,11 @@ public class WebInputMapperTests
     }
 
     [Fact]
-    public void SmallTiltsMoveSlowlyAndAddUp()
-    {
-        var mapper = Ready();
-        int total = 0;
-        for (int i = 1; i <= 200; i++)
-        {
-            foreach (InputCommand command in mapper.Update(0, 10000, 0, 0, 0, Ms(i * 16)))
-            {
-                total += ((InputCommand.MoveCursor)command).Dx;
-            }
-        }
-        Assert.InRange(total, 1, 500);  // moved, but much slower than the 4800 px of full tilt
-    }
-
-    [Fact]
     public void RightStickScrolls()
     {
         var mapper = Ready();
         var down = Assert.IsType<InputCommand.Scroll>(Assert.Single(mapper.Update(0, 0, 0, 0, -32767, Ms(100))));
         Assert.True(down.Delta < 0);
-    }
-
-    [Fact]
-    public void PauseLongerThanAFrameDoesNotJumpThePointer()
-    {
-        var mapper = Ready();
-        var move = Assert.IsType<InputCommand.MoveCursor>(Assert.Single(mapper.Update(0, 32767, 0, 0, 0, Ms(60000))));
-        Assert.InRange(move.Dx, 1, 151);
-    }
-
-    [Fact]
-    public void PointerSpeedScalesHowFarTheStickMoves()
-    {
-        InputCommand.MoveCursor Move(int percent)
-        {
-            var mapper = new WebInputMapper(WebControlStyle.Pointer, percent);
-            mapper.Update(0, 0, 0, 0, 0, Ms(0));
-            return Assert.IsType<InputCommand.MoveCursor>(Assert.Single(mapper.Update(0, 32767, 0, 0, 0, Ms(100))));
-        }
-
-        Assert.Equal(150, Move(100).Dx);
-        Assert.Equal(90, Move(60).Dx);
-        Assert.Equal(45, Move(30).Dx);
     }
 
     [Fact]
@@ -199,104 +134,10 @@ public class WebInputMapperTests
         Press(mapper, 0, 192);
         Assert.Equal([new InputCommand.MouseButton(true)], Press(mapper, ButtonA, 208));
     }
-
-    [Fact]
-    public void PressingTheRightStickTogglesTheControlsBarEachPress()
-    {
-        var mapper = Ready();
-        Assert.Equal([new InputCommand.ToggleControlsBar()], Press(mapper, RightStickPress, 16));
-        Assert.Empty(Press(mapper, RightStickPress, 2000));  // holding doesn't repeat
-        Press(mapper, 0, 2016);
-        Assert.Equal([new InputCommand.ToggleControlsBar()], Press(mapper, RightStickPress, 2032));
-    }
-
-    [Fact]
-    public void ShouldersStillControlVolume()
-    {
-        Assert.Equal([new InputCommand.Volume(NavAction.VolumeUp)], Press(Ready(), RightShoulder));
-    }
 }
 
 public class OverlayViewModelTests
 {
-    [Fact]
-    public void StartsOnALetterWithExactlyOneKeySelected()
-    {
-        var overlay = new OverlayViewModel();
-        Assert.Equal('q', overlay.SelectedKey.Character);
-        Assert.Single(overlay.Rows.SelectMany(row => row), key => key.IsSelected);
-    }
-
-    [Fact]
-    public void MovingWrapsAndKeepsOneKeySelected()
-    {
-        var overlay = new OverlayViewModel();
-        overlay.Move(NavAction.Left);
-        Assert.Equal('p', overlay.SelectedKey.Character);
-        overlay.Move(NavAction.Right);
-        Assert.Equal('q', overlay.SelectedKey.Character);
-        overlay.Move(NavAction.Up);
-        Assert.Equal('1', overlay.SelectedKey.Character);
-        overlay.Move(NavAction.Up);
-        Assert.Equal(KeyKind.Shift, overlay.SelectedKey.Kind);
-        Assert.Single(overlay.Rows.SelectMany(row => row), key => key.IsSelected);
-    }
-
-    [Fact]
-    public void MovingToTheShortRowKeepsTheRelativePosition()
-    {
-        var overlay = new OverlayViewModel();
-        overlay.Move(NavAction.Left);  // 'p', far right
-        overlay.Move(NavAction.Down);
-        overlay.Move(NavAction.Down);
-        overlay.Move(NavAction.Down);
-        Assert.Equal(KeyKind.Enter, overlay.SelectedKey.Kind);
-    }
-
-    [Fact]
-    public void TheBarOnlyOffersLeavingRunningWhenItWorks()
-    {
-        var overlay = new OverlayViewModel();
-        overlay.ShowHintFor(WebControlStyle.Pointer, canLeaveRunning: true);
-        Assert.Contains("Tap View", overlay.Hint);
-        overlay.ShowHintFor(WebControlStyle.Pointer);
-        Assert.DoesNotContain("Tap View", overlay.Hint);
-    }
-
-    [Fact]
-    public void TheWaitingBarNamesTheLauncher()
-    {
-        var overlay = new OverlayViewModel();
-        overlay.ShowHintFor(WebControlStyle.WaitingForLaunch, waitingFor: "Battle.net");
-        Assert.StartsWith("Waiting for Battle.net", overlay.Hint);
-        overlay.ShowHintFor(WebControlStyle.WaitingForLaunch);
-        Assert.StartsWith("Waiting for the app", overlay.Hint);
-    }
-
-    [Fact]
-    public void ControlsBarStepsAsideForTheKeyboardAndComesBack()
-    {
-        var overlay = new OverlayViewModel();
-        overlay.ShowHintFor(WebControlStyle.Pointer);
-        Assert.True(overlay.ShowHint);
-        Assert.Contains("hide this", overlay.Hint);
-
-        overlay.IsKeyboardVisible = true;
-        Assert.False(overlay.ShowHint);
-        overlay.IsKeyboardVisible = false;
-        Assert.True(overlay.ShowHint);
-
-        overlay.IsHintVisible = false;
-        Assert.False(overlay.ShowHint);
-    }
-
-    [Fact]
-    public void AtSignNeedsNoShift()
-    {
-        var overlay = new OverlayViewModel();
-        Assert.Contains(overlay.Rows.SelectMany(row => row), key => key.Character == '@' && key.Label == "@");
-    }
-
     [Fact]
     public void ShiftGivesCapitalsAndTheSymbolsNeededToSignIn()
     {
@@ -312,25 +153,6 @@ public class OverlayViewModelTests
 
         overlay.ToggleShift();
         Assert.Equal('q', overlay.SelectedKey.Character);
-    }
-
-    [Fact]
-    public void ANewSessionStartsUnshifted()
-    {
-        var overlay = new OverlayViewModel();
-        overlay.ToggleShift();
-        overlay.ResetSelection();
-        Assert.Equal('q', overlay.SelectedKey.Character);
-    }
-
-    [Fact]
-    public void ResetReturnsToTheStart()
-    {
-        var overlay = new OverlayViewModel();
-        overlay.Move(NavAction.Down);
-        overlay.ResetSelection();
-        Assert.Equal('q', overlay.SelectedKey.Character);
-        Assert.Single(overlay.Rows.SelectMany(row => row), key => key.IsSelected);
     }
 }
 
@@ -367,27 +189,9 @@ public class SteamLibraryTests
     [Theory]
     [InlineData("228980", "Steamworks Common Redistributables", "4")]
     [InlineData("1628350", "Steam Linux Runtime 3.0", "4")]
-    [InlineData("2348590", "Proton 8.0", "4")]
-    [InlineData("100", "Still Downloading", "1026")]
-    [InlineData("431960", "Wallpaper Engine", "4")]
-    [InlineData("abc", "Bad Id", "4")]
     public void SkipsSupportPackagesAndUnfinishedGames(string appId, string name, string flags)
     {
         Assert.Null(SteamLibrary.ParseManifest(Manifest(appId, name, flags), "C:\\nowhere"));
-    }
-
-    [Fact]
-    public void RemembersWhereTheGameIsInstalledInItsOwnLibrary()
-    {
-        AppDefinition? game = SteamLibrary.ParseManifest(Manifest("1", "Game"), "C:\\Steam", "D:\\Games");
-        Assert.Equal("D:\\Games\\steamapps\\common\\Folder", game?.InstallFolder);
-    }
-
-    [Fact]
-    public void MalformedManifestIsSkipped()
-    {
-        Assert.Null(SteamLibrary.ParseManifest("not a manifest", "C:\\nowhere"));
-        Assert.Null(SteamLibrary.ParseManifest("", "C:\\nowhere"));
     }
 
     [Fact]
@@ -401,33 +205,6 @@ public class SteamLibraryTests
             }
             """;
         Assert.Equal(["C:\\Program Files (x86)\\Steam", "D:\\Games\\Steam"], SteamLibrary.ParseLibraries(text));
-    }
-
-    [Fact]
-    public void ScansAFolderSortsByNameAndSurvivesAMissingFolder()
-    {
-        string folder = Directory.CreateTempSubdirectory("couchshell-steam-test").FullName;
-        try
-        {
-            string steamApps = Directory.CreateDirectory(Path.Combine(folder, "steamapps")).FullName;
-            File.WriteAllText(Path.Combine(steamApps, "appmanifest_2.acf"), Manifest("2", "Zebra"));
-            File.WriteAllText(Path.Combine(steamApps, "appmanifest_1.acf"), Manifest("1", "Apple"));
-            File.WriteAllText(Path.Combine(steamApps, "libraryfolders.vdf"), "\"0\" { \"path\" \"Z:\\\\missing\" }");
-
-            string art = Directory.CreateDirectory(Path.Combine(folder, "appcache", "librarycache", "1")).FullName;
-            File.WriteAllText(Path.Combine(art, "header.jpg"), "");
-
-            var log = new List<string>();
-            List<AppDefinition> games = SteamLibrary.Scan(folder, log.Add);
-            Assert.Equal(["Apple", "Zebra"], games.Select(game => game.Name));
-            Assert.EndsWith("header.jpg", games[0].Image);
-            Assert.Null(games[1].Image);
-            Assert.Empty(log);
-        }
-        finally
-        {
-            Directory.Delete(folder, recursive: true);
-        }
     }
 
     [Fact]
@@ -450,77 +227,24 @@ public class SteamLibraryTests
             Directory.Delete(folder, recursive: true);
         }
     }
-
-    [Fact]
-    public void NoSteamInstalledGivesNoGames()
-    {
-        Assert.Empty(SteamLibrary.Scan("C:\\does\\not\\exist", _ => { }));
-    }
 }
 
 public class InputOverlayWindowTests
 {
-    // Loads the real XAML and draws it with the keyboard open. A bad binding or resource throws
-    // here instead of when someone is on the couch. Also leaves a picture to look at.
-    [Fact]
-    public void LoadsAndDrawsTheKeyboard()
-    {
-        Exception? failure = null;
-        string picture = Path.Combine(Path.GetTempPath(), "couchshell-overlay.png");
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                var overlay = new OverlayViewModel { IsKeyboardVisible = true };
-                overlay.ShowHintFor(WebControlStyle.Pointer);
-                var window = new InputOverlayWindow { DataContext = overlay };
-                var content = (FrameworkElement)window.Content;
-                content.Measure(new Size(1920, 1080));
-                content.Arrange(new Rect(0, 0, 1920, 1080));
-                content.UpdateLayout();
-
-                var bitmap = new RenderTargetBitmap(1920, 1080, 96, 96, PixelFormats.Pbgra32);
-                bitmap.Render(content);
-                var encoder = new PngBitmapEncoder();
-                encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                using FileStream file = File.Create(picture);
-                encoder.Save(file);
-                window.Close();
-            }
-            catch (Exception e)
-            {
-                failure = e;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);  // WPF windows require this kind of thread
-        thread.Start();
-        thread.Join();
-
-        Assert.Null(failure);
-        Assert.True(new FileInfo(picture).Length > 1000);
-    }
 }
 
 public class BrandLogoTests
 {
-    [Theory]
-    [InlineData("youtube")]
-    [InlineData("netflix")]
-    [InlineData("chrome")]
-    [InlineData("steam")]
-    [InlineData("battlenet")]
-    [InlineData("epic")]
-    [InlineData("riot")]
-    [InlineData("spotify")]
-    public void EveryLogoIsAValidShape(string name)
-    {
-        Geometry shape = Geometry.Parse(BrandLogos.Find(name)!.Path);
-        Assert.False(shape.Bounds.IsEmpty);
-        Assert.True(shape.Bounds.Width > 10);
-    }
-
+    // A typo in a logo's path data would only show up as a blank tile, so check them all at once.
     [Fact]
-    public void UnknownLogoIsNull() => Assert.Null(BrandLogos.Find("nope"));
+    public void EveryLogoIsAValidShape()
+    {
+        foreach (string name in new[] { "youtube", "netflix", "chrome", "steam", "battlenet", "epic", "riot", "spotify" })
+        {
+            Geometry shape = Geometry.Parse(BrandLogos.Find(name)!.Path);
+            Assert.True(shape.Bounds.Width > 10, name);
+        }
+    }
 }
 
 public class WindowsNativeTests

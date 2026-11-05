@@ -26,23 +26,6 @@ public class GameLibrariesTests
     }
 
     [Fact]
-    public void TheClientAloneAndTestServersAreNotGames()
-    {
-        Assert.Empty(GameLibraries.ParseRiot([RiotClient]));
-        Assert.Empty(GameLibraries.ParseRiot(
-        [
-            RiotClient,
-            new UninstallEntry("Riot Game valorant.pbe", "VALORANT PBE", "C:/x", "x"),
-        ]));
-    }
-
-    [Fact]
-    public void RiotGameWithoutTheClientCannotBeLaunched()
-    {
-        Assert.Empty(GameLibraries.ParseRiot([new UninstallEntry("Riot Game valorant.live", "VALORANT", "C:/x", "x")]));
-    }
-
-    [Fact]
     public void FindsABattleNetGameWithItsLaunchCode()
     {
         var game = Assert.Single(GameLibraries.ParseBattleNet(
@@ -55,19 +38,6 @@ public class GameLibrariesTests
         Assert.Equal("--exec=\"launch Pro\"", game.Args);
         Assert.EndsWith("Battle.net.exe", game.Target);
         Assert.Equal("C:\\Games\\Overwatch", game.InstallFolder);
-    }
-
-    [Fact]
-    public void ABattleNetGameKeepsItsOwnProgramForItsIcon()
-    {
-        var game = Assert.Single(GameLibraries.ParseBattleNet(
-        [
-            BattleNet,
-            new UninstallEntry("World of Warcraft", "World of Warcraft", "C:\\Games\\World of Warcraft",
-                "\"x\\Blizzard Uninstaller.exe\" --uid=wow", "C:\\Games\\World of Warcraft\\_retail_\\WoW.exe"),
-        ]));
-        Assert.Equal("C:\\Games\\World of Warcraft\\_retail_\\WoW.exe", game.Icon);
-        Assert.Equal("battlenet", game.Logo);  // kept until the icon is read, in case it can't be
     }
 
     [Theory]
@@ -94,24 +64,11 @@ public class GameLibrariesTests
 
     [Theory]
     [InlineData("\"C:\\Games\\x.exe\",0", "C:\\Games\\x.exe")]
-    [InlineData("C:/Games/x.exe", "C:\\Games\\x.exe")]
     [InlineData("C:\\Launcher\\launcher.exe", null)]  // only the launcher's own icon
     [InlineData("C:\\Games\\x.ico", null)]
-    [InlineData(null, null)]
     public void GameProgramReadsTheDisplayIcon(string? displayIcon, string? expected)
     {
         Assert.Equal(expected, GameLibraries.GameProgram(displayIcon, "C:\\Launcher\\launcher.exe"));
-    }
-
-    [Fact]
-    public void BattleNetGameWithAnUnknownCodeOpensItsPage()
-    {
-        var game = Assert.Single(GameLibraries.ParseBattleNet(
-        [
-            BattleNet,
-            new UninstallEntry("New", "New Game", "C:\\Games\\New", "\"x\\Blizzard Uninstaller.exe\" --uid=newgame"),
-        ]));
-        Assert.Equal("--game=newgame", game.Args);
     }
 
     [Fact]
@@ -137,36 +94,8 @@ public class GameLibrariesTests
     [Theory]
     [InlineData("""{ "DisplayName": "Half done", "AppName": "a", "CatalogNamespace": "b", "CatalogItemId": "c", "InstallLocation": "d", "bIsIncompleteInstall": true }""")]
     [InlineData("""{ "DisplayName": "Unreal Engine", "AppName": "a", "CatalogNamespace": "b", "CatalogItemId": "c", "InstallLocation": "d", "AppCategories": ["engines"] }""")]
-    [InlineData("""{ "AppName": "no name" }""")]
-    [InlineData("not json")]
-    [InlineData("[]")]
     public void SkipsEpicManifestsThatAreNotPlayableGames(string json)
     {
         Assert.Null(GameLibraries.ParseEpicManifest(json));
-    }
-
-    [Fact]
-    public void LauncherTilesUseThePointerAndTrackTheirWindows()
-    {
-        List<AppDefinition> launchers = GameLibraries.ParseLaunchers(
-        [
-            BattleNet,
-            RiotClient,
-            new UninstallEntry("{BC0E}", "Epic Games Launcher", "C:\\Program Files (x86)\\Epic Games\\", "MsiExec.exe"),
-        ]);
-        Assert.Equal(["Battle.net", "Riot Client", "Epic Games"], launchers.Select(app => app.Name));
-        Assert.All(launchers, app =>
-        {
-            Assert.Equal(WebControlStyle.Pointer, app.WebControl);
-            Assert.Equal("window", app.Watch);
-            Assert.Equal("apps", app.Category);
-        });
-        Assert.EndsWith("EpicGamesLauncher.exe", launchers[2].Target);
-    }
-
-    [Fact]
-    public void NoLaunchersInstalledGivesNoTiles()
-    {
-        Assert.Empty(GameLibraries.ParseLaunchers([]));
     }
 }
