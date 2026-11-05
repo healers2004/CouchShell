@@ -35,13 +35,17 @@ public sealed class ControllerService : IDisposable
 
     private async Task PollLoopAsync(CancellationToken token)
     {
+        // GameInput when it's installed, because then XInput blanks the controller while an app is
+        // in front. XInput otherwise.
+        using WindowsNative.GameInputGamepad? gameInput = WindowsNative.GameInputGamepad.TryCreate();
+        AppLog.Write($"Reading the controller through {(gameInput != null ? "GameInput" : "XInput")}");
         var clock = Stopwatch.StartNew();
         int slot = -1;  // XInput slot of the controller in use, or -1 when none is connected
         WebInputSession? runningSession = null;
 
         while (!token.IsCancellationRequested)
         {
-            if (slot < 0)
+            if (slot < 0 && gameInput == null)
             {
                 slot = FindController();
                 if (slot >= 0) Debug.WriteLine($"Controller connected in slot {slot}");
@@ -58,7 +62,12 @@ public sealed class ControllerService : IDisposable
             }
 
             TimeSpan delay;
-            if (slot >= 0 && WindowsNative.TryGetGamepad(slot, out var pad))
+            WindowsNative.XInputGamepad pad = default;
+            bool connected = gameInput != null
+                ? gameInput.TryRead(out pad)
+                : slot >= 0 && WindowsNative.TryGetGamepad(slot, out pad);
+            if (gameInput != null) slot = connected ? 0 : -1;  // GameInput merges every gamepad into one
+            if (connected)
             {
                 if (session != null)
                 {

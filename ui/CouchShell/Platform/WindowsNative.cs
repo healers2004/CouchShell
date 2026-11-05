@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -46,6 +47,157 @@ internal static class WindowsNative
         gamepad = state.Gamepad;
         return connected;
     }
+
+    // ---- GameInput ----
+    // Where Microsoft's GameInput is installed (the Xbox app and many games install it), XInput runs
+    // on top of it and hands apps in the background a controller with nothing pressed. CouchShell is
+    // in the background while an app is open, so it reads GameInput itself, which can be asked for
+    // background input. Its interfaces are COM-style: an object is a pointer to a table of function
+    // pointers, and the indexes below are the methods' positions in GameInput.h (version 4).
+
+    private const string GameInputDll = @"Microsoft GameInput\x64\GameInputRedist.dll";
+    private static readonly Guid GameInputV4 = new("F2DAAE4C-4D21-4250-8953-4F791E6279AB");
+    private const uint GameInputKindGamepad = 0x00040000;
+    private const int ReleaseMethod = 2;                // IUnknown::Release
+    private const int GetCurrentReadingMethod = 4;      // IGameInput
+    private const int EnableBackgroundInputMethod = 13; // IGameInput
+    private const int GetGamepadStateMethod = 18;       // IGameInputReading
+
+    // GameInputGamepadState: buttons, then triggers 0..1 and sticks -1..1.
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct GameInputGamepadState
+    {
+        public uint Buttons;
+        public float LeftTrigger;
+        public float RightTrigger;
+        public float LeftX;
+        public float LeftY;
+        public float RightX;
+        public float RightY;
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int GameInputInitializeFn(ref Guid interfaceId, out IntPtr gameInput);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int GetCurrentReadingFn(IntPtr self, uint kind, IntPtr device, out IntPtr reading);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate void EnableBackgroundInputFn(IntPtr self, [MarshalAs(UnmanagedType.U1)] bool enable);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private delegate bool GetGamepadStateFn(IntPtr self, out GameInputGamepadState state);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate uint ReleaseFn(IntPtr self);
+
+    // The function at `index` in a COM-style object's table.
+    private static T Method<T>(IntPtr instance, int index) where T : Delegate =>
+        Marshal.GetDelegateForFunctionPointer<T>(Marshal.ReadIntPtr(Marshal.ReadIntPtr(instance), index * IntPtr.Size));
+
+    // One GameInput connection, kept for the life of the controller service. Used from one thread.
+    public sealed class GameInputGamepad : IDisposable
+    {
+        private IntPtr _gameInput;
+        private readonly GetCurrentReadingFn _getCurrentReading;
+        private GetGamepadStateFn? _getGamepadState;
+        private ReleaseFn? _releaseReading;
+
+        private GameInputGamepad(IntPtr gameInput)
+        {
+            _gameInput = gameInput;
+            _getCurrentReading = Method<GetCurrentReadingFn>(gameInput, GetCurrentReadingMethod);
+            Method<EnableBackgroundInputFn>(gameInput, EnableBackgroundInputMethod)(gameInput, true);
+        }
+
+        // Null when GameInput version 4 or later isn't installed; XInput is fine there.
+        public static GameInputGamepad? TryCreate()
+        {
+            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), GameInputDll);
+            if (!File.Exists(path) || !NativeLibrary.TryLoad(path, out IntPtr module) ||
+                !NativeLibrary.TryGetExport(module, "GameInputInitialize", out IntPtr initialize))
+            {
+                return null;
+            }
+            Guid version = GameInputV4;
+            // A non-zero HRESULT means this copy doesn't offer version 4.
+            int result = Marshal.GetDelegateForFunctionPointer<GameInputInitializeFn>(initialize)(ref version, out IntPtr gameInput);
+            return result == 0 && gameInput != IntPtr.Zero ? new GameInputGamepad(gameInput) : null;
+        }
+
+        // The latest state of any connected gamepad, in XInput's form. False when none is connected.
+        public bool TryRead(out XInputGamepad gamepad)
+        {
+            gamepad = default;
+            if (_gameInput == IntPtr.Zero || _getCurrentReading(_gameInput, GameInputKindGamepad, IntPtr.Zero, out IntPtr reading) != 0)
+            {
+                return false;  // GAMEINPUT_E_READING_NOT_FOUND: no gamepad
+            }
+            try
+            {
+                // Every reading shares one function table, so these are looked up once.
+                _getGamepadState ??= Method<GetGamepadStateFn>(reading, GetGamepadStateMethod);
+                _releaseReading ??= Method<ReleaseFn>(reading, ReleaseMethod);
+                if (!_getGamepadState(reading, out GameInputGamepadState state)) return false;
+                gamepad = ToXInput(state);
+                return true;
+            }
+            finally
+            {
+                _releaseReading?.Invoke(reading);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_gameInput == IntPtr.Zero) return;
+            Method<ReleaseFn>(_gameInput, ReleaseMethod)(_gameInput);
+            _gameInput = IntPtr.Zero;
+        }
+    }
+
+    // GameInput's button bits, in the order XInput's bits are listed in ControllerInputMapper.
+    private static readonly (uint GameInput, ushort XInput)[] ButtonMap =
+    [
+        (0x00000040, 0x0001), // D-pad up
+        (0x00000080, 0x0002), // D-pad down
+        (0x00000100, 0x0004), // D-pad left
+        (0x00000200, 0x0008), // D-pad right
+        (0x00000001, 0x0010), // Menu (Start)
+        (0x00000002, 0x0020), // View (Back)
+        (0x00001000, 0x0040), // left stick press
+        (0x00002000, 0x0080), // right stick press
+        (0x00000400, 0x0100), // LB
+        (0x00000800, 0x0200), // RB
+        (0x00000004, 0x1000), // A
+        (0x00000008, 0x2000), // B
+        (0x00000010, 0x4000), // X
+        (0x00000020, 0x8000), // Y
+    ];
+
+    // GameInput's state in XInput's form, so the rest of CouchShell needn't know which one it came
+    // from. Both use positive Y for up.
+    internal static XInputGamepad ToXInput(GameInputGamepadState state)
+    {
+        ushort buttons = 0;
+        foreach ((uint gameInput, ushort xInput) in ButtonMap)
+        {
+            if ((state.Buttons & gameInput) != 0) buttons |= xInput;
+        }
+        return new XInputGamepad
+        {
+            Buttons = buttons,
+            LeftTrigger = (byte)Math.Round(Math.Clamp(state.LeftTrigger, 0f, 1f) * 255),
+            RightTrigger = (byte)Math.Round(Math.Clamp(state.RightTrigger, 0f, 1f) * 255),
+            ThumbLX = Axis(state.LeftX),
+            ThumbLY = Axis(state.LeftY),
+            ThumbRX = Axis(state.RightX),
+            ThumbRY = Axis(state.RightY),
+        };
+    }
+
+    private static short Axis(float value) => (short)Math.Round(Math.Clamp(value, -1f, 1f) * short.MaxValue);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
